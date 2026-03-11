@@ -14,13 +14,16 @@ pub struct TokenRef {
 }
 
 // ─── StyleValue<T> ───
-/// IMPORTANT: Uses adjacently tagged serde (#[serde(tag = "type", content = "value")])
-/// because Raw(T) can contain primitives like f32 which can't be internally tagged.
+/// Uses untagged serde representation so that `Raw(T)` serializes as the bare value
+/// (e.g., `1.0` for f32, `{"space":"srgb",...}` for Color) and `Bound` serializes
+/// as `{"token":...,"resolved":...}`. This avoids the serde limitation where an
+/// adjacently-tagged enum nested inside an internally-tagged enum (e.g., Paint uses
+/// `tag = "type"`) causes a "duplicate field `type`" deserialization error.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "value", rename_all = "lowercase")]
+#[serde(untagged)]
 pub enum StyleValue<T> {
-    Raw(T),
     Bound { token: TokenRef, resolved: T },
+    Raw(T),
 }
 
 impl<T: Clone> StyleValue<T> {

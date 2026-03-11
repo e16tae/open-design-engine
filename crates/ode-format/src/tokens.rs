@@ -77,8 +77,12 @@ impl TokenValue {
 }
 
 // ─── TokenResolve ───
+/// Uses untagged serde so that `Direct(TokenValue)` serializes as the bare TokenValue
+/// (adjacently tagged with its own `type`/`value` fields) and `Alias(TokenRef)` serializes
+/// as `{"collection_id":...,"token_id":...}`. Using internally-tagged here would produce
+/// a "duplicate field `type`" error because TokenValue is already adjacently tagged.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(untagged)]
 pub enum TokenResolve {
     Direct(TokenValue),
     Alias(TokenRef),
