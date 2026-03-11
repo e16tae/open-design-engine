@@ -85,7 +85,7 @@ pub enum TokenResolve {
 }
 
 // ─── Token ───
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Token {
     pub id: TokenId,
     pub name: std::string::String,
@@ -94,14 +94,14 @@ pub struct Token {
 }
 
 // ─── Mode ───
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Mode {
     pub id: ModeId,
     pub name: std::string::String,
 }
 
 // ─── TokenCollection ───
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TokenCollection {
     pub id: CollectionId,
     pub name: std::string::String,
@@ -111,7 +111,7 @@ pub struct TokenCollection {
 }
 
 // ─── DesignTokens ───
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignTokens {
     pub collections: Vec<TokenCollection>,
     pub active_modes: HashMap<CollectionId, ModeId>,

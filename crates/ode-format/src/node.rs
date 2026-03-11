@@ -19,7 +19,7 @@ pub type StableId = String;
 ///
 /// Wraps `SlotMap<NodeId, Node>` so that `NodeTree::new()` works (custom
 /// slotmap key types require `with_key()` instead of `new()`).
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct NodeTree(SlotMap<NodeId, Node>);
 
 impl NodeTree {
@@ -29,6 +29,20 @@ impl NodeTree {
 
     pub fn insert(&mut self, node: Node) -> NodeId {
         self.0.insert(node)
+    }
+}
+
+impl PartialEq for NodeTree {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+        // Compare by collecting and sorting stable_ids and node content.
+        let mut a: Vec<_> = self.0.values().map(|n| (&n.stable_id, n)).collect();
+        let mut b: Vec<_> = other.0.values().map(|n| (&n.stable_id, n)).collect();
+        a.sort_by_key(|(id, _)| *id);
+        b.sort_by_key(|(id, _)| *id);
+        a.iter().zip(b.iter()).all(|((ia, na), (ib, nb))| ia == ib && na == nb)
     }
 }
 
