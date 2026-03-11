@@ -1,0 +1,13 @@
+[package]
+name = "ode-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ODE export engine — SVG, PNG, PDF output"
+
+[dependencies]
+ode-format = { path = "../ode-format" }
+ode-core = { path = "../ode-core" }
+tiny-skia = { workspace = true }
+image = { workspace = true }
+thiserror = { workspace = true }

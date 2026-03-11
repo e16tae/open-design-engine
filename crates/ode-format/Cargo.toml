@@ -1,0 +1,13 @@
+[package]
+name = "ode-format"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ODE document format — parsing, serialization, and document model"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+kurbo = { workspace = true }
+nanoid = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,15 @@
+[package]
+name = "ode-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ODE core engine — rendering pipeline, layout, and vector operations"
+
+[dependencies]
+ode-format = { path = "../ode-format" }
+tiny-skia = { workspace = true }
+kurbo = { workspace = true }
+lyon = { workspace = true }
+taffy = { workspace = true }
+image = { workspace = true }
+thiserror = { workspace = true }

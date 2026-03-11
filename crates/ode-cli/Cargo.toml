@@ -1,0 +1,17 @@
+[package]
+name = "ode-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ODE command-line tool"
+
+[[bin]]
+name = "ode"
+path = "src/main.rs"
+
+[dependencies]
+ode-format = { path = "../ode-format" }
+ode-core = { path = "../ode-core" }
+ode-export = { path = "../ode-export" }
+clap = { workspace = true }
+anyhow = { workspace = true }

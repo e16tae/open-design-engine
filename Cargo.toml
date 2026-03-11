@@ -1,0 +1,52 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ode-format",
+    "crates/ode-core",
+    "crates/ode-export",
+    "crates/ode-cli",
+    "crates/ode-mcp",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Open Design Engine — You don't have to know design."
+repository = "https://github.com/user/open-design-engine"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Path/curve math
+kurbo = "0.11"
+
+# CPU rendering
+tiny-skia = "0.11"
+
+# Tessellation
+lyon = "1"
+
+# Layout engine
+taffy = "0.7"
+
+# Image I/O
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+# PDF generation
+krilla = "0.6"
+
+# Color management
+lcms2 = "6"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# ID generation
+nanoid = "0.4"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
