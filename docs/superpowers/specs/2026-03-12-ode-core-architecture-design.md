@@ -205,6 +205,7 @@ type CanvasRoot = NodeId;
 
 struct Document {
     format_version: Version,       // e.g., "0.1.0" — file format version
+    name: String,                  // Human-readable document name
     nodes: NodeTree,
     canvas: Vec<CanvasRoot>,       // top-level frames on the infinite canvas
     tokens: DesignTokens,
