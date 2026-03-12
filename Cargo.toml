@@ -50,6 +50,9 @@ nanoid = "0.4"
 # Arena-based storage
 slotmap = { version = "1", features = ["serde"] }
 
+# Boolean path operations
+i_overlay = "1"
+
 # Error handling
 thiserror = "2"
 anyhow = "1"
