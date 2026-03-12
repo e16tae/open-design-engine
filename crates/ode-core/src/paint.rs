@@ -225,6 +225,15 @@ fn generate_diamond_gradient_pixmap(
     let cy = center.y as f32;
     let rx = radius.x as f32;
     let ry = radius.y as f32;
+    // Zero radius → degenerate gradient, fill with last stop color
+    if rx.abs() < f32::EPSILON || ry.abs() < f32::EPSILON {
+        let color = stops.last().map(|s| sample_gradient(stops, 1.0)).unwrap_or(tiny_skia::Color::TRANSPARENT);
+        let pm = color.premultiply().to_color_u8();
+        for pixel in grad_pixmap.pixels_mut() {
+            *pixel = pm;
+        }
+        return Some(grad_pixmap);
+    }
     for y in 0..h {
         for x in 0..w {
             let dx = ((x as f32 - cx) / rx).abs();
@@ -247,13 +256,19 @@ fn fill_angular_gradient(
     angle: f32,
     fill_rule: tiny_skia::FillRule,
     transform: tiny_skia::Transform,
-    _mask: Option<&tiny_skia::Mask>,
+    mask: Option<&tiny_skia::Mask>,
 ) {
     let w = pixmap.width();
     let h = pixmap.height();
     if let Some(grad_pixmap) = generate_angular_gradient_pixmap(w, h, stops, center, angle) {
         if let Some(mut clip_mask) = tiny_skia::Mask::new(w, h) {
             clip_mask.fill_path(path, fill_rule, true, transform);
+            // Combine with external mask if provided (intersect: keep only where both masks allow)
+            if let Some(ext_mask) = mask {
+                for (clip_byte, ext_byte) in clip_mask.data_mut().iter_mut().zip(ext_mask.data().iter()) {
+                    *clip_byte = ((*clip_byte as u16 * *ext_byte as u16) / 255) as u8;
+                }
+            }
             let paint = tiny_skia::PixmapPaint {
                 opacity: 1.0,
                 blend_mode: tiny_skia::BlendMode::SourceOver,
@@ -273,13 +288,19 @@ fn fill_diamond_gradient(
     radius: kurbo::Point,
     fill_rule: tiny_skia::FillRule,
     transform: tiny_skia::Transform,
-    _mask: Option<&tiny_skia::Mask>,
+    mask: Option<&tiny_skia::Mask>,
 ) {
     let w = pixmap.width();
     let h = pixmap.height();
     if let Some(grad_pixmap) = generate_diamond_gradient_pixmap(w, h, stops, center, radius) {
         if let Some(mut clip_mask) = tiny_skia::Mask::new(w, h) {
             clip_mask.fill_path(path, fill_rule, true, transform);
+            // Combine with external mask if provided (intersect: keep only where both masks allow)
+            if let Some(ext_mask) = mask {
+                for (clip_byte, ext_byte) in clip_mask.data_mut().iter_mut().zip(ext_mask.data().iter()) {
+                    *clip_byte = ((*clip_byte as u16 * *ext_byte as u16) / 255) as u8;
+                }
+            }
             let paint = tiny_skia::PixmapPaint {
                 opacity: 1.0,
                 blend_mode: tiny_skia::BlendMode::SourceOver,

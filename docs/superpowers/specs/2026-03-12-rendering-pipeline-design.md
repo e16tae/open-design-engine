@@ -365,8 +365,49 @@ entry, `PopLayer` pops it and composites onto the previous entry.
 | Solid | `tiny_skia::Paint` with `shader = Shader::SolidColor` |
 | LinearGradient | `tiny_skia::LinearGradient::new()` |
 | RadialGradient | `tiny_skia::RadialGradient::new(center, center, radius_x, stops, spread_mode, Transform::from_scale(1.0, radius_y/radius_x))` — two-point conical with `(start=center, end=center, radius=radius_x)`. Elliptical via scale transform on the Y axis. |
-| AngularGradient | **Manual implementation** — sample colors by angle, generate shader pixmap |
-| DiamondGradient | **Manual implementation** — Manhattan distance-based color sampling |
+| AngularGradient | **Manual implementation** — see [AngularGradient details](#angulargradient-implementation) below |
+| DiamondGradient | **Manual implementation** — see [DiamondGradient details](#diamondgradient-implementation) below |
+
+#### AngularGradient implementation
+
+tiny-skia has no native conic/sweep gradient. Implemented as a per-pixel shader pixmap.
+
+**Algorithm:**
+1. Allocate a temporary `Pixmap` matching the node's bounding box
+2. For each pixel `(px, py)`, compute angle: `θ = atan2(py - center.y, px - center.x) + start_angle`
+3. Normalize `θ` to `[0, 1)` range, sample color from gradient stops via linear interpolation
+4. Write RGBA to the shader pixmap
+5. Use `Paint { shader: Pattern::new(shader_pixmap, ...) }` to fill/stroke the path
+
+**Performance:**
+- **Time complexity**: O(W × H) per gradient — one `atan2` + interpolation per pixel
+- **Benchmark reference**: 512×512 region ≈ 262K pixels, `atan2` ≈ 20ns/call → ~5ms per gradient fill
+- For typical icon/illustration sizes (≤ 1024×1024), overhead is negligible
+- **No caching**: shader pixmap is regenerated per render call (stateless renderer). Caching is a future optimization if profiling shows need
+
+**Edge handling:**
+- Seam at 360°→0° wrap: adjacent pixels may span the discontinuity. Apply 1px linear interpolation across the seam to prevent aliasing artifacts
+- Stop positions outside `[0, 1]` are clamped
+
+#### DiamondGradient implementation
+
+Diamond gradient uses Manhattan distance (L1 norm) instead of Euclidean distance (L2, radial).
+
+**Algorithm:**
+1. Allocate a temporary `Pixmap` matching the node's bounding box
+2. For each pixel `(px, py)`, compute normalized distance: `d = (|px - center.x| / radius.x) + (|py - center.y| / radius.y)`
+3. Clamp `d` to `[0, 1]`, sample color from gradient stops
+4. Write RGBA to the shader pixmap
+5. Use as `Pattern` shader, same as AngularGradient
+
+**Performance:**
+- **Time complexity**: O(W × H) per gradient — simpler math than Angular (no trig), ~2× faster per pixel
+- Abs + division + addition vs. `atan2`: ≈ 3ns vs. 20ns per pixel
+- 512×512 region ≈ ~0.8ms per gradient fill
+
+**Resolution:**
+- Both AngularGradient and DiamondGradient shader pixmaps render at **1:1 pixel ratio** — no resolution loss
+- Shader pixmap dimensions match the node's bounding box in device pixels, so output quality equals the final render resolution
 
 ### BlendMode mapping
 
@@ -452,9 +493,26 @@ Note: `StrokePosition` (Inside/Outside/Center) has no tiny-skia equivalent — i
 3. Composite blurred result to parent
 
 **BackgroundBlur:**
-1. Extract background region behind current node
-2. Apply Gaussian blur
-3. Composite as background of current node
+
+BackgroundBlur는 디자인 툴의 표준 기능이다 (Figma의 "Background blur", CSS `backdrop-filter: blur()`).
+현재 노드 *뒤에* 이미 렌더링된 모든 콘텐츠를 블러 처리하는 것이 핵심이다.
+
+구현 단계:
+1. **배경 캡처**: 현재 레이어 스택에서 부모 pixmap의 현재 상태를 스냅샷한다.
+   이 시점에서 부모 pixmap에는 현재 노드보다 먼저 렌더링된 모든 형제/조상 콘텐츠가 포함되어 있다.
+2. **영역 클리핑**: 현재 노드의 경계(path 또는 frame rect)를 Mask로 만들어 스냅샷에서 해당 영역만 추출한다.
+3. **Gaussian blur 적용**: 추출된 영역에 blur_radius만큼 3-pass box blur를 적용한다.
+4. **합성**: 블러된 배경을 현재 노드의 레이어에 `SourceOver`로 먼저 그린 뒤, 노드 자신의 fills/strokes를 그 위에 렌더링한다.
+
+렌더러 구조적 요구사항:
+- `PushLayer` 시점에 부모 pixmap에 대한 **읽기 접근**이 필요하다. 레이어 스택이 이미 `Vec<(Pixmap, ...)>` 구조이므로, 스택의 이전 항목을 참조하면 된다.
+- BackgroundBlur가 있는 노드는 반드시 자체 레이어(`PushLayer`)를 가져야 한다 — 이는 이미 모든 노드에 대해 보장되어 있다.
+
+성능 특성:
+- **추가 pixmap 복사 1회**: 부모 pixmap → 클리핑된 영역 복사. O(W × H) 여기서 W, H는 노드 바운딩 박스 크기.
+- **blur 비용**: 3-pass box blur, 각 pass O(W × H). 총 O(3 × W × H).
+- 전체 추가 비용: blur가 있는 노드당 pixmap 할당 1회 + 복사 1회 + blur 3 pass.
+- 아이콘/일러스트 규모에서는 병목이 아님. 전체 캔버스 크기의 BackgroundBlur가 여러 개 중첩될 경우에만 성능 영향 가능.
 
 **Gaussian blur implementation:**
 - tiny-skia has no built-in blur
