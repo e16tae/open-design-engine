@@ -1,4 +1,5 @@
 pub mod blend;
+pub mod convert;
 pub mod effects;
 pub mod error;
 pub mod paint;
