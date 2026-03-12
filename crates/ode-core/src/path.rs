@@ -1,5 +1,6 @@
 use kurbo::{BezPath, PathEl, RoundedRect, RoundedRectRadii, Rect, Shape};
-use ode_format::node::{VectorPath, PathSegment};
+use ode_format::node::{VectorPath, PathSegment, BooleanOperation};
+use crate::error::RenderError;
 
 /// Convert serializable VectorPath to kurbo BezPath for rendering.
 pub fn to_bezpath(path: &VectorPath) -> BezPath {
@@ -87,6 +88,75 @@ pub fn transform_to_skia(t: &ode_format::node::Transform) -> tiny_skia::Transfor
     tiny_skia::Transform::from_row(t.a, t.b, t.c, t.d, t.tx, t.ty)
 }
 
+/// Apply a boolean operation to two paths using i_overlay.
+pub fn boolean_op(
+    a: &BezPath,
+    b: &BezPath,
+    op: BooleanOperation,
+) -> Result<BezPath, RenderError> {
+    use i_overlay::core::fill_rule::FillRule as OverlayFillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+
+    let contours_a = bezpath_to_contours(a);
+    let contours_b = bezpath_to_contours(b);
+
+    let rule = match op {
+        BooleanOperation::Union => OverlayRule::Union,
+        BooleanOperation::Subtract => OverlayRule::Difference,
+        BooleanOperation::Intersect => OverlayRule::Intersect,
+        BooleanOperation::Exclude => OverlayRule::Xor,
+    };
+
+    let shapes = contours_a.overlay(&contours_b, rule, OverlayFillRule::NonZero);
+
+    // Convert back to BezPath
+    let mut result = BezPath::new();
+    for shape in &shapes {
+        for contour in shape {
+            if contour.is_empty() { continue; }
+            result.move_to((contour[0][0], contour[0][1]));
+            for pt in &contour[1..] {
+                result.line_to((pt[0], pt[1]));
+            }
+            result.close_path();
+        }
+    }
+
+    Ok(result)
+}
+
+/// Convert BezPath into contours (Vec of Vec of [f64; 2] points) for i_overlay.
+/// i_overlay works with polygons, so curves are flattened to line segments.
+fn bezpath_to_contours(bp: &BezPath) -> Vec<Vec<[f64; 2]>> {
+    let mut contours = Vec::new();
+    let mut current: Vec<[f64; 2]> = Vec::new();
+
+    kurbo::flatten(bp, 0.25, |el| {
+        match el {
+            PathEl::MoveTo(p) => {
+                if !current.is_empty() {
+                    contours.push(std::mem::take(&mut current));
+                }
+                current.push([p.x, p.y]);
+            }
+            PathEl::LineTo(p) => {
+                current.push([p.x, p.y]);
+            }
+            PathEl::ClosePath => {
+                if !current.is_empty() {
+                    contours.push(std::mem::take(&mut current));
+                }
+            }
+            _ => {} // flatten() only produces MoveTo, LineTo, ClosePath
+        }
+    });
+    if !current.is_empty() {
+        contours.push(current);
+    }
+    contours
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,5 +219,49 @@ mod tests {
         bp.close_path();
         let skia_path = bezpath_to_skia(&bp);
         assert!(skia_path.is_some(), "Should produce a valid tiny-skia path");
+    }
+
+    #[test]
+    fn boolean_union_two_overlapping_rects() {
+        use ode_format::node::BooleanOperation;
+        let mut r1 = BezPath::new();
+        r1.move_to((0.0, 0.0));
+        r1.line_to((60.0, 0.0));
+        r1.line_to((60.0, 60.0));
+        r1.line_to((0.0, 60.0));
+        r1.close_path();
+
+        let mut r2 = BezPath::new();
+        r2.move_to((30.0, 30.0));
+        r2.line_to((90.0, 30.0));
+        r2.line_to((90.0, 90.0));
+        r2.line_to((30.0, 90.0));
+        r2.close_path();
+
+        let result = boolean_op(&r1, &r2, BooleanOperation::Union);
+        assert!(result.is_ok(), "Union should succeed");
+        let path = result.unwrap();
+        assert!(path.elements().len() > 4);
+    }
+
+    #[test]
+    fn boolean_subtract() {
+        use ode_format::node::BooleanOperation;
+        let mut r1 = BezPath::new();
+        r1.move_to((0.0, 0.0));
+        r1.line_to((100.0, 0.0));
+        r1.line_to((100.0, 100.0));
+        r1.line_to((0.0, 100.0));
+        r1.close_path();
+
+        let mut r2 = BezPath::new();
+        r2.move_to((25.0, 25.0));
+        r2.line_to((75.0, 25.0));
+        r2.line_to((75.0, 75.0));
+        r2.line_to((25.0, 75.0));
+        r2.close_path();
+
+        let result = boolean_op(&r1, &r2, BooleanOperation::Subtract);
+        assert!(result.is_ok(), "Subtract should succeed");
     }
 }

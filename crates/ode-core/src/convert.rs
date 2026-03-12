@@ -174,18 +174,29 @@ fn get_node_path(doc: &Document, node: &Node) -> Option<kurbo::BezPath> {
         NodeKind::Vector(data) => {
             Some(path::to_bezpath(&data.path))
         }
-        NodeKind::BooleanOp(_data) => {
-            // Collect child paths and apply boolean operation
-            // Boolean ops will be implemented in Task 10; for now return first child path
+        NodeKind::BooleanOp(data) => {
             if let Some(children) = node.kind.children() {
+                let mut paths: Vec<kurbo::BezPath> = Vec::new();
                 for &child_id in children {
                     let child = &doc.nodes[child_id];
                     if let Some(child_path) = get_node_path(doc, child) {
-                        return Some(child_path);
+                        paths.push(child_path);
                     }
                 }
+                if paths.len() >= 2 {
+                    let mut result = paths[0].clone();
+                    for p in &paths[1..] {
+                        if let Ok(r) = path::boolean_op(&result, p, data.op) {
+                            result = r;
+                        }
+                    }
+                    Some(result)
+                } else {
+                    paths.into_iter().next()
+                }
+            } else {
+                None
             }
-            None
         }
         _ => None,
     }
