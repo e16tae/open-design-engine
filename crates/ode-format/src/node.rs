@@ -109,6 +109,40 @@ pub struct LayoutConfig {
 #[serde(rename_all = "kebab-case")]
 pub enum BooleanOperation { Union, Subtract, Intersect, Exclude }
 
+// ─── VectorPath ───
+
+/// Serializable path representation.
+/// Conversion to/from kurbo::BezPath lives in ode-core::path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VectorPath {
+    pub segments: Vec<PathSegment>,
+    pub closed: bool,
+}
+
+impl Default for VectorPath {
+    fn default() -> Self {
+        Self { segments: vec![], closed: false }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum PathSegment {
+    MoveTo { x: f32, y: f32 },
+    LineTo { x: f32, y: f32 },
+    QuadTo { x1: f32, y1: f32, x: f32, y: f32 },
+    CurveTo { x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32 },
+    Close,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FillRule { NonZero, EvenOdd }
+
+impl Default for FillRule {
+    fn default() -> Self { Self::NonZero }
+}
+
 // ─── NodeKind ───
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -172,6 +206,12 @@ impl NodeKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FrameData {
     #[serde(default)]
+    pub width: f32,
+    #[serde(default)]
+    pub height: f32,
+    #[serde(default)]
+    pub corner_radius: [f32; 4],
+    #[serde(default)]
     pub visual: VisualProps,
     #[serde(default)]
     pub container: ContainerProps,
@@ -188,6 +228,10 @@ pub struct GroupData {
 pub struct VectorData {
     #[serde(default)]
     pub visual: VisualProps,
+    #[serde(default)]
+    pub path: VectorPath,
+    #[serde(default)]
+    pub fill_rule: FillRule,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -250,7 +294,7 @@ fn default_opacity() -> f32 { 1.0 }
 // Note: `impl Default for BlendMode` is in style.rs (where BlendMode is defined).
 
 impl Node {
-    pub fn new_frame(name: &str) -> Self {
+    pub fn new_frame(name: &str, width: f32, height: f32) -> Self {
         Self {
             id: NodeId::default(),
             stable_id: nanoid::nanoid!(),
@@ -260,6 +304,9 @@ impl Node {
             blend_mode: BlendMode::Normal,
             constraints: None,
             kind: NodeKind::Frame(Box::new(FrameData {
+                width,
+                height,
+                corner_radius: [0.0; 4],
                 visual: VisualProps::default(),
                 container: ContainerProps::default(),
                 component_def: None,
@@ -280,7 +327,7 @@ impl Node {
         }
     }
 
-    pub fn new_vector(name: &str) -> Self {
+    pub fn new_vector(name: &str, path: VectorPath) -> Self {
         Self {
             id: NodeId::default(),
             stable_id: nanoid::nanoid!(),
@@ -289,7 +336,11 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             constraints: None,
-            kind: NodeKind::Vector(Box::new(VectorData { visual: VisualProps::default() })),
+            kind: NodeKind::Vector(Box::new(VectorData {
+                visual: VisualProps::default(),
+                path,
+                fill_rule: FillRule::default(),
+            })),
         }
     }
 
@@ -366,7 +417,7 @@ mod tests {
     #[test]
     fn create_frame_node() {
         let mut tree = NodeTree::new();
-        let node = Node::new_frame("Header");
+        let node = Node::new_frame("Header", 100.0, 100.0);
         let id = tree.insert(node);
         assert_eq!(tree[id].name, "Header");
         assert!(matches!(tree[id].kind, NodeKind::Frame(_)));
@@ -382,7 +433,7 @@ mod tests {
 
     #[test]
     fn frame_has_visual_props() {
-        let node = Node::new_frame("Card");
+        let node = Node::new_frame("Card", 200.0, 150.0);
         assert!(node.kind.visual().is_some());
     }
 
@@ -394,27 +445,27 @@ mod tests {
 
     #[test]
     fn frame_has_children() {
-        let node = Node::new_frame("Parent");
+        let node = Node::new_frame("Parent", 100.0, 100.0);
         assert!(node.kind.children().is_some());
         assert!(node.kind.children().unwrap().is_empty());
     }
 
     #[test]
     fn vector_has_no_children() {
-        let node = Node::new_vector("Path");
+        let node = Node::new_vector("Path", VectorPath::default());
         assert!(node.kind.children().is_none());
     }
 
     #[test]
     fn stable_ids_are_unique() {
-        let a = Node::new_frame("A");
-        let b = Node::new_frame("B");
+        let a = Node::new_frame("A", 100.0, 100.0);
+        let b = Node::new_frame("B", 100.0, 100.0);
         assert_ne!(a.stable_id, b.stable_id);
     }
 
     #[test]
     fn node_kind_visual_accessor() {
-        let mut node = Node::new_frame("Colored");
+        let mut node = Node::new_frame("Colored", 100.0, 100.0);
         if let NodeKind::Frame(ref mut data) = node.kind {
             data.visual.fills.push(Fill {
                 paint: Paint::Solid { color: StyleValue::Raw(Color::black()) },
@@ -425,5 +476,69 @@ mod tests {
         }
         let visual = node.kind.visual().unwrap();
         assert_eq!(visual.fills.len(), 1);
+    }
+
+    #[test]
+    fn vectorpath_serde_roundtrip() {
+        let path = VectorPath {
+            segments: vec![
+                PathSegment::MoveTo { x: 0.0, y: 0.0 },
+                PathSegment::LineTo { x: 100.0, y: 0.0 },
+                PathSegment::CurveTo { x1: 100.0, y1: 50.0, x2: 50.0, y2: 100.0, x: 0.0, y: 100.0 },
+                PathSegment::Close,
+            ],
+            closed: true,
+        };
+        let json = serde_json::to_string(&path).unwrap();
+        let parsed: VectorPath = serde_json::from_str(&json).unwrap();
+        assert_eq!(path, parsed);
+    }
+
+    #[test]
+    fn fillrule_default_is_nonzero() {
+        assert_eq!(FillRule::default(), FillRule::NonZero);
+    }
+
+    #[test]
+    fn frame_data_has_size_and_corner_radius() {
+        let node = Node::new_frame("Card", 200.0, 100.0);
+        if let NodeKind::Frame(ref data) = node.kind {
+            assert!((data.width - 200.0).abs() < f32::EPSILON);
+            assert!((data.height - 100.0).abs() < f32::EPSILON);
+            assert_eq!(data.corner_radius, [0.0; 4]);
+        } else {
+            panic!("Expected Frame node");
+        }
+    }
+
+    #[test]
+    fn vector_data_has_path_and_fill_rule() {
+        let path = VectorPath {
+            segments: vec![
+                PathSegment::MoveTo { x: 0.0, y: 0.0 },
+                PathSegment::LineTo { x: 50.0, y: 50.0 },
+            ],
+            closed: false,
+        };
+        let node = Node::new_vector("Line", path.clone());
+        if let NodeKind::Vector(ref data) = node.kind {
+            assert_eq!(data.path, path);
+            assert_eq!(data.fill_rule, FillRule::NonZero);
+        } else {
+            panic!("Expected Vector node");
+        }
+    }
+
+    #[test]
+    fn frame_data_backward_compat_no_size() {
+        let json = r#"{"type":"frame","visual":{},"container":{},"component_def":null}"#;
+        let kind: NodeKind = serde_json::from_str(json).unwrap();
+        if let NodeKind::Frame(data) = kind {
+            assert!((data.width - 0.0).abs() < f32::EPSILON);
+            assert!((data.height - 0.0).abs() < f32::EPSILON);
+            assert_eq!(data.corner_radius, [0.0; 4]);
+        } else {
+            panic!("Expected Frame");
+        }
     }
 }

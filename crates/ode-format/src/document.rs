@@ -92,7 +92,7 @@ mod tests {
     #[test]
     fn add_frame_to_canvas() {
         let mut doc = Document::new("Test");
-        let frame = Node::new_frame("Artboard 1");
+        let frame = Node::new_frame("Artboard 1", 100.0, 100.0);
         let id = doc.nodes.insert(frame);
         doc.canvas.push(id);
         assert_eq!(doc.canvas.len(), 1);
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn add_export_view() {
         let mut doc = Document::new("Test");
-        let frame = Node::new_frame("Icon");
+        let frame = Node::new_frame("Icon", 100.0, 100.0);
         let id = doc.nodes.insert(frame);
         doc.canvas.push(id);
         doc.views.push(View {

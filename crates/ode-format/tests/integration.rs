@@ -10,7 +10,7 @@ fn full_document_roundtrip() {
     let mut doc = Document::new("Integration Test");
 
     // Create a frame with a fill
-    let mut frame = Node::new_frame("Card");
+    let mut frame = Node::new_frame("Card", 300.0, 200.0);
     if let ode_format::node::NodeKind::Frame(ref mut data) = frame.kind {
         data.visual.fills.push(Fill {
             paint: Paint::Solid {
@@ -102,7 +102,7 @@ fn style_value_bound_with_token_roundtrip() {
     ));
 
     // Create frame with a token-bound fill
-    let mut frame = Node::new_frame("Card");
+    let mut frame = Node::new_frame("Card", 300.0, 200.0);
     if let ode_format::node::NodeKind::Frame(ref mut data) = frame.kind {
         data.visual.fills.push(Fill {
             paint: Paint::Solid {
