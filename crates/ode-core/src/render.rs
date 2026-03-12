@@ -108,39 +108,37 @@ impl Renderer {
                 }
                 RenderCommand::ApplyEffect { effect } => {
                     match effect {
-                        ResolvedEffect::DropShadow { color, offset_x, offset_y, blur_radius, spread } => {
-                            let rect_path = tiny_skia::PathBuilder::from_rect(
-                                tiny_skia::Rect::from_xywh(0.0, 0.0, w as f32, h as f32).unwrap()
-                            );
-                            if let Some(shadow) = effects::render_drop_shadow(
-                                &rect_path, color, *offset_x, *offset_y, *blur_radius, *spread, w, h,
-                            ) {
-                                let current = stack.last_mut().unwrap();
-                                let content = current.pixmap.clone();
-                                current.pixmap.fill(tiny_skia::Color::TRANSPARENT);
-                                let paint = tiny_skia::PixmapPaint {
-                                    opacity: 1.0,
-                                    blend_mode: tiny_skia::BlendMode::SourceOver,
-                                    quality: tiny_skia::FilterQuality::Nearest,
-                                };
-                                current.pixmap.draw_pixmap(0, 0, shadow.as_ref(), &paint, tiny_skia::Transform::identity(), None);
-                                current.pixmap.draw_pixmap(0, 0, content.as_ref(), &paint, tiny_skia::Transform::identity(), None);
+                        ResolvedEffect::DropShadow { color, offset_x, offset_y, blur_radius, spread, shape } => {
+                            if let Some(skia_shape) = path::bezpath_to_skia(shape) {
+                                if let Some(shadow) = effects::render_drop_shadow(
+                                    &skia_shape, color, *offset_x, *offset_y, *blur_radius, *spread, w, h,
+                                ) {
+                                    let current = stack.last_mut().unwrap();
+                                    let content = current.pixmap.clone();
+                                    current.pixmap.fill(tiny_skia::Color::TRANSPARENT);
+                                    let paint = tiny_skia::PixmapPaint {
+                                        opacity: 1.0,
+                                        blend_mode: tiny_skia::BlendMode::SourceOver,
+                                        quality: tiny_skia::FilterQuality::Nearest,
+                                    };
+                                    current.pixmap.draw_pixmap(0, 0, shadow.as_ref(), &paint, tiny_skia::Transform::identity(), None);
+                                    current.pixmap.draw_pixmap(0, 0, content.as_ref(), &paint, tiny_skia::Transform::identity(), None);
+                                }
                             }
                         }
-                        ResolvedEffect::InnerShadow { color, offset_x, offset_y, blur_radius, spread } => {
-                            let rect_path = tiny_skia::PathBuilder::from_rect(
-                                tiny_skia::Rect::from_xywh(0.0, 0.0, w as f32, h as f32).unwrap()
-                            );
-                            if let Some(shadow) = effects::render_inner_shadow(
-                                &rect_path, color, *offset_x, *offset_y, *blur_radius, *spread, w, h,
-                            ) {
-                                let current = stack.last_mut().unwrap();
-                                let paint = tiny_skia::PixmapPaint {
-                                    opacity: 1.0,
-                                    blend_mode: tiny_skia::BlendMode::SourceOver,
-                                    quality: tiny_skia::FilterQuality::Nearest,
-                                };
-                                current.pixmap.draw_pixmap(0, 0, shadow.as_ref(), &paint, tiny_skia::Transform::identity(), None);
+                        ResolvedEffect::InnerShadow { color, offset_x, offset_y, blur_radius, spread, shape } => {
+                            if let Some(skia_shape) = path::bezpath_to_skia(shape) {
+                                if let Some(shadow) = effects::render_inner_shadow(
+                                    &skia_shape, color, *offset_x, *offset_y, *blur_radius, *spread, w, h,
+                                ) {
+                                    let current = stack.last_mut().unwrap();
+                                    let paint = tiny_skia::PixmapPaint {
+                                        opacity: 1.0,
+                                        blend_mode: tiny_skia::BlendMode::SourceOver,
+                                        quality: tiny_skia::FilterQuality::Nearest,
+                                    };
+                                    current.pixmap.draw_pixmap(0, 0, shadow.as_ref(), &paint, tiny_skia::Transform::identity(), None);
+                                }
                             }
                         }
                         ResolvedEffect::LayerBlur { radius } => {

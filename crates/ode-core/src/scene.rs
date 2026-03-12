@@ -76,8 +76,8 @@ pub struct ResolvedGradientStop {
 
 #[derive(Debug, Clone)]
 pub enum ResolvedEffect {
-    DropShadow { color: Color, offset_x: f32, offset_y: f32, blur_radius: f32, spread: f32 },
-    InnerShadow { color: Color, offset_x: f32, offset_y: f32, blur_radius: f32, spread: f32 },
+    DropShadow { color: Color, offset_x: f32, offset_y: f32, blur_radius: f32, spread: f32, shape: kurbo::BezPath },
+    InnerShadow { color: Color, offset_x: f32, offset_y: f32, blur_radius: f32, spread: f32, shape: kurbo::BezPath },
     LayerBlur { radius: f32 },
     BackgroundBlur { radius: f32 },
 }

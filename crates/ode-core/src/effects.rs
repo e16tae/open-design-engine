@@ -114,6 +114,25 @@ fn box_blur_v(src: &[Vec<f32>], dst: &mut [Vec<f32>], w: usize, h: usize, r: f32
     }
 }
 
+/// Scale a path outward (positive spread) or inward (negative spread).
+/// Uses scale-around-center as an approximation of true path offsetting.
+fn apply_spread(path: &tiny_skia::Path, spread: f32) -> Option<tiny_skia::Path> {
+    if spread.abs() < f32::EPSILON { return None; }
+    let bounds = path.bounds();
+    let cx = (bounds.left() + bounds.right()) / 2.0;
+    let cy = (bounds.top() + bounds.bottom()) / 2.0;
+    let w = bounds.width();
+    let h = bounds.height();
+    if w < f32::EPSILON || h < f32::EPSILON { return None; }
+    let sx = ((w + 2.0 * spread) / w).max(f32::EPSILON);
+    let sy = ((h + 2.0 * spread) / h).max(f32::EPSILON);
+    let t1 = tiny_skia::Transform::from_translate(-cx, -cy);
+    let s = tiny_skia::Transform::from_scale(sx, sy);
+    let t2 = tiny_skia::Transform::from_translate(cx, cy);
+    let transform = t1.post_concat(s).post_concat(t2);
+    path.clone().transform(transform)
+}
+
 /// Render a drop shadow effect. Returns a pixmap with the shadow to composite UNDER content.
 pub fn render_drop_shadow(
     content_path: &tiny_skia::Path,
@@ -121,16 +140,18 @@ pub fn render_drop_shadow(
     offset_x: f32,
     offset_y: f32,
     blur_radius: f32,
-    _spread: f32,
+    spread: f32,
     width: u32,
     height: u32,
 ) -> Option<tiny_skia::Pixmap> {
+    let spread_path = apply_spread(content_path, spread);
+    let path = spread_path.as_ref().unwrap_or(content_path);
     let mut shadow = tiny_skia::Pixmap::new(width, height)?;
     let mut paint = tiny_skia::Paint::default();
     paint.shader = tiny_skia::Shader::SolidColor(crate::paint::color_to_skia(color));
     paint.anti_alias = true;
     let transform = tiny_skia::Transform::from_translate(offset_x, offset_y);
-    shadow.fill_path(content_path, &paint, tiny_skia::FillRule::Winding, transform, None);
+    shadow.fill_path(path, &paint, tiny_skia::FillRule::Winding, transform, None);
     if blur_radius > 0.0 {
         gaussian_blur(&mut shadow, blur_radius);
     }
@@ -138,24 +159,27 @@ pub fn render_drop_shadow(
 }
 
 /// Render an inner shadow effect. Returns a pixmap to composite OVER content.
+/// Spread contracts the cutout shape (making the shadow thicker around edges).
 pub fn render_inner_shadow(
     content_path: &tiny_skia::Path,
     color: &ode_format::color::Color,
     offset_x: f32,
     offset_y: f32,
     blur_radius: f32,
-    _spread: f32,
+    spread: f32,
     width: u32,
     height: u32,
 ) -> Option<tiny_skia::Pixmap> {
+    let cutout_path = apply_spread(content_path, -spread);
+    let cutout = cutout_path.as_ref().unwrap_or(content_path);
     let mut shadow = tiny_skia::Pixmap::new(width, height)?;
     shadow.fill(crate::paint::color_to_skia(color));
-    let mut cutout = tiny_skia::Paint::default();
-    cutout.shader = tiny_skia::Shader::SolidColor(tiny_skia::Color::TRANSPARENT);
-    cutout.blend_mode = tiny_skia::BlendMode::Source;
-    cutout.anti_alias = true;
+    let mut cutout_paint = tiny_skia::Paint::default();
+    cutout_paint.shader = tiny_skia::Shader::SolidColor(tiny_skia::Color::TRANSPARENT);
+    cutout_paint.blend_mode = tiny_skia::BlendMode::Source;
+    cutout_paint.anti_alias = true;
     let transform = tiny_skia::Transform::from_translate(offset_x, offset_y);
-    shadow.fill_path(content_path, &cutout, tiny_skia::FillRule::Winding, transform, None);
+    shadow.fill_path(cutout, &cutout_paint, tiny_skia::FillRule::Winding, transform, None);
     if blur_radius > 0.0 {
         gaussian_blur(&mut shadow, blur_radius);
     }

@@ -63,17 +63,20 @@ fn convert_node(
         let node_path = get_node_path(doc, node);
 
         // Effects that render BEHIND content (DropShadow)
-        for effect in &visual.effects {
-            if let Effect::DropShadow { color, offset, blur, spread } = effect {
-                commands.push(RenderCommand::ApplyEffect {
-                    effect: ResolvedEffect::DropShadow {
-                        color: color.value(),
-                        offset_x: offset.x,
-                        offset_y: offset.y,
-                        blur_radius: blur.value(),
-                        spread: spread.value(),
-                    },
-                });
+        if let Some(ref bp) = node_path {
+            for effect in &visual.effects {
+                if let Effect::DropShadow { color, offset, blur, spread } = effect {
+                    commands.push(RenderCommand::ApplyEffect {
+                        effect: ResolvedEffect::DropShadow {
+                            color: color.value(),
+                            offset_x: offset.x,
+                            offset_y: offset.y,
+                            blur_radius: blur.value(),
+                            spread: spread.value(),
+                            shape: bp.clone(),
+                        },
+                    });
+                }
             }
         }
 
@@ -117,15 +120,18 @@ fn convert_node(
         for effect in &visual.effects {
             match effect {
                 Effect::InnerShadow { color, offset, blur, spread } => {
-                    commands.push(RenderCommand::ApplyEffect {
-                        effect: ResolvedEffect::InnerShadow {
-                            color: color.value(),
-                            offset_x: offset.x,
-                            offset_y: offset.y,
-                            blur_radius: blur.value(),
-                            spread: spread.value(),
-                        },
-                    });
+                    if let Some(ref bp) = node_path {
+                        commands.push(RenderCommand::ApplyEffect {
+                            effect: ResolvedEffect::InnerShadow {
+                                color: color.value(),
+                                offset_x: offset.x,
+                                offset_y: offset.y,
+                                blur_radius: blur.value(),
+                                spread: spread.value(),
+                                shape: bp.clone(),
+                            },
+                        });
+                    }
                 }
                 Effect::LayerBlur { radius } => {
                     commands.push(RenderCommand::ApplyEffect {
@@ -179,7 +185,14 @@ fn get_node_path(doc: &Document, node: &Node) -> Option<kurbo::BezPath> {
                 let mut paths: Vec<kurbo::BezPath> = Vec::new();
                 for &child_id in children {
                     let child = &doc.nodes[child_id];
-                    if let Some(child_path) = get_node_path(doc, child) {
+                    if let Some(mut child_path) = get_node_path(doc, child) {
+                        let t = &child.transform;
+                        let affine = kurbo::Affine::new([
+                            t.a as f64, t.b as f64,
+                            t.c as f64, t.d as f64,
+                            t.tx as f64, t.ty as f64,
+                        ]);
+                        child_path.apply_affine(affine);
                         paths.push(child_path);
                     }
                 }
