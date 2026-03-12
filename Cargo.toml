@@ -47,6 +47,9 @@ clap = { version = "4", features = ["derive"] }
 # ID generation
 nanoid = "0.4"
 
+# Arena-based storage
+slotmap = { version = "1", features = ["serde"] }
+
 # Error handling
 thiserror = "2"
 anyhow = "1"
