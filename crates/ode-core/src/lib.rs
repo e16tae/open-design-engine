@@ -1,3 +1,4 @@
+pub mod blend;
 pub mod error;
 pub mod path;
 pub mod scene;
