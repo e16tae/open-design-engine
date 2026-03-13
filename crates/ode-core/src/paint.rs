@@ -227,7 +227,7 @@ fn generate_diamond_gradient_pixmap(
     let ry = radius.y as f32;
     // Zero radius → degenerate gradient, fill with last stop color
     if rx.abs() < f32::EPSILON || ry.abs() < f32::EPSILON {
-        let color = stops.last().map(|s| sample_gradient(stops, 1.0)).unwrap_or(tiny_skia::Color::TRANSPARENT);
+        let color = stops.last().map(|_| sample_gradient(stops, 1.0)).unwrap_or(tiny_skia::Color::TRANSPARENT);
         let pm = color.premultiply().to_color_u8();
         for pixel in grad_pixmap.pixels_mut() {
             *pixel = pm;
