@@ -5,7 +5,6 @@ members = [
     "crates/ode-core",
     "crates/ode-export",
     "crates/ode-cli",
-    "crates/ode-mcp",
 ]
 
 [workspace.package]
@@ -56,3 +55,6 @@ i_overlay = "1"
 # Error handling
 thiserror = "2"
 anyhow = "1"
+
+# JSON Schema generation
+schemars = { version = "0.8" }
