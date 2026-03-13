@@ -1,6 +1,7 @@
 use std::ops::{Index, IndexMut};
 
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 use slotmap::{new_key_type, SlotMap};
 
 use crate::style::{VisualProps, BlendMode};
@@ -70,7 +71,7 @@ impl IndexMut<NodeId> for NodeTree {
 // ─── Transform ───
 
 /// 2D affine transform matrix: [a, b, c, d, tx, ty]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Transform {
     pub a: f32, pub b: f32, pub c: f32, pub d: f32, pub tx: f32, pub ty: f32,
 }
@@ -83,11 +84,11 @@ impl Default for Transform {
 
 // ─── Constraints ───
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ConstraintAxis { Fixed, Scale, Stretch, Center }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Constraints {
     pub horizontal: ConstraintAxis,
     pub vertical: ConstraintAxis,
@@ -106,14 +107,14 @@ pub struct ContainerProps {
 }
 
 /// Placeholder for layout configuration (designed when taffy is integrated).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LayoutConfig {
     _placeholder: (),
 }
 
 // ─── BooleanOperation ───
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum BooleanOperation { Union, Subtract, Intersect, Exclude }
 
@@ -121,7 +122,7 @@ pub enum BooleanOperation { Union, Subtract, Intersect, Exclude }
 
 /// Serializable path representation.
 /// Conversion to/from kurbo::BezPath lives in ode-core::path.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VectorPath {
     pub segments: Vec<PathSegment>,
     pub closed: bool,
@@ -133,7 +134,7 @@ impl Default for VectorPath {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum PathSegment {
     MoveTo { x: f32, y: f32 },
@@ -143,7 +144,7 @@ pub enum PathSegment {
     Close,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum FillRule { NonZero, EvenOdd }
 
@@ -232,7 +233,7 @@ pub struct GroupData {
     pub children: Vec<NodeId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VectorData {
     #[serde(default)]
     pub visual: VisualProps,
@@ -251,14 +252,14 @@ pub struct BooleanOpData {
     pub children: Vec<NodeId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TextData {
     #[serde(default)]
     pub visual: VisualProps,
     pub content: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ImageData {
     #[serde(default)]
     pub visual: VisualProps,
@@ -273,7 +274,7 @@ pub struct InstanceData {
     pub overrides: Vec<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ComponentDef {
     pub name: String,
     pub description: String,

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 use crate::style::StyleValue;
 
 /// Font family name. Type alias for spec alignment — allows future refinement.
@@ -6,7 +7,7 @@ pub type FontFamily = String;
 /// Font weight (1–1000). Type alias for spec alignment.
 pub type FontWeight = u16;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TextStyle {
     pub font_family: StyleValue<FontFamily>,
     pub font_weight: StyleValue<FontWeight>,
@@ -43,7 +44,7 @@ impl Default for TextStyle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum LineHeight {
     Auto,
@@ -51,29 +52,29 @@ pub enum LineHeight {
     Percent { value: StyleValue<f32> },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TextAlign { Left, Center, Right, Justify }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum VerticalAlign { Top, Middle, Bottom }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TextDecoration { None, Underline, Strikethrough, Both }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TextTransform { None, Uppercase, Lowercase, Capitalize }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct OpenTypeFeature {
     pub tag: [u8; 4],
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableFontAxis {
     pub tag: [u8; 4],
     pub value: StyleValue<f32>,

@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 use crate::node::{NodeId, NodeTree};
 use crate::tokens::DesignTokens;
 
 // ─── Version ───
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Version(pub u32, pub u32, pub u32);
 
 impl std::fmt::Display for Version {
@@ -13,11 +14,11 @@ impl std::fmt::Display for Version {
 }
 
 // ─── IDs ───
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct ViewId(pub u32);
 
 // ─── Working Color Space ───
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorkingColorSpace { Srgb, DisplayP3, AdobeRgb, ProPhotoRgb }
 
