@@ -15,3 +15,4 @@ ode-core = { path = "../ode-core" }
 ode-export = { path = "../ode-export" }
 clap = { workspace = true }
 anyhow = { workspace = true }
+serde_json = { workspace = true }

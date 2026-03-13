@@ -30,6 +30,14 @@ impl NodeTree {
     pub fn insert(&mut self, node: Node) -> NodeId {
         self.0.insert(node)
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl PartialEq for NodeTree {
