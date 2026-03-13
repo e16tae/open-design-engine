@@ -467,6 +467,8 @@ dependencies = [
  "ode-core",
  "ode-export",
  "ode-format",
+ "schemars",
+ "serde",
  "serde_json",
 ]
 

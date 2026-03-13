@@ -1,12 +1,11 @@
-use std::path::PathBuf;
-use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use ode_core::{Renderer, Scene};
-use ode_export::PngExporter;
-use ode_format::Document;
+
+mod commands;
+mod output;
+mod validate;
 
 #[derive(Parser)]
-#[command(name = "ode", about = "Open Design Engine CLI")]
+#[command(name = "ode", about = "Open Design Engine CLI — Agent-native design tool")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -14,73 +13,79 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Render an .ode.json file to PNG
-    Render {
-        /// Input .ode.json file
-        input: PathBuf,
-        /// Output PNG path (default: <input_stem>.png)
-        #[arg(short, long)]
-        output: Option<PathBuf>,
+    /// Create a new empty .ode.json document
+    New {
+        /// Output file path
+        file: String,
+        /// Document name
+        #[arg(long)]
+        name: Option<String>,
+        /// Root frame width (requires --height)
+        #[arg(long, requires = "height")]
+        width: Option<f32>,
+        /// Root frame height (requires --width)
+        #[arg(long, requires = "width")]
+        height: Option<f32>,
     },
-    /// Show document metadata
-    Info {
-        /// Input .ode.json file
-        input: PathBuf,
+    /// Validate an .ode.json document
+    Validate {
+        /// Input file (or "-" for stdin)
+        file: String,
+    },
+    /// Validate, render, and export in one step
+    Build {
+        /// Input file (or "-" for stdin)
+        file: String,
+        /// Output PNG path
+        #[arg(short, long)]
+        output: String,
+    },
+    /// Render without validation (fast path)
+    Render {
+        /// Input file (or "-" for stdin)
+        file: String,
+        /// Output PNG path
+        #[arg(short, long)]
+        output: String,
+    },
+    /// Inspect document structure
+    Inspect {
+        /// Input file (or "-" for stdin)
+        file: String,
+        /// Show full properties (not just tree summary)
+        #[arg(long)]
+        full: bool,
+    },
+    /// Output JSON Schema for the .ode.json format
+    Schema {
+        /// Schema topic: document, node, paint, token, color
+        topic: Option<String>,
     },
 }
 
-fn main() -> Result<()> {
+fn main() {
     let cli = Cli::parse();
 
-    match cli.command {
-        Command::Render { input, output } => cmd_render(&input, output.as_deref()),
-        Command::Info { input } => cmd_info(&input),
-    }
-}
-
-fn load_document(path: &std::path::Path) -> Result<Document> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
-    let doc: Document = serde_json::from_str(&text)
-        .with_context(|| format!("Failed to parse {}", path.display()))?;
-    Ok(doc)
-}
-
-fn cmd_render(input: &std::path::Path, output: Option<&std::path::Path>) -> Result<()> {
-    let doc = load_document(input)?;
-
-    let scene = Scene::from_document(&doc)
-        .context("Failed to convert document to scene")?;
-
-    let pixmap = Renderer::render(&scene)
-        .context("Failed to render scene")?;
-
-    let out_path = match output {
-        Some(p) => p.to_path_buf(),
-        None => {
-            // Strip .ode.json double extension → stem.png
-            let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
-            let stem = stem.strip_suffix(".ode").unwrap_or(stem);
-            input.with_file_name(format!("{stem}.png"))
+    let exit_code = match cli.command {
+        Command::New { file, name, width, height } => {
+            commands::cmd_new(&file, name.as_deref(), width, height)
+        }
+        Command::Validate { file } => {
+            commands::cmd_validate(&file)
+        }
+        Command::Build { file, output } => {
+            commands::cmd_build(&file, &output)
+        }
+        Command::Render { file, output } => {
+            commands::cmd_render(&file, &output)
+        }
+        Command::Inspect { file, full } => {
+            commands::cmd_inspect(&file, full)
+        }
+        Command::Schema { topic } => {
+            commands::cmd_schema(topic.as_deref())
         }
     };
 
-    PngExporter::export(&pixmap, &out_path)
-        .with_context(|| format!("Failed to export PNG to {}", out_path.display()))?;
-
-    println!("Rendered {} → {}", input.display(), out_path.display());
-    Ok(())
-}
-
-fn cmd_info(input: &std::path::Path) -> Result<()> {
-    let doc = load_document(input)?;
-
-    println!("Name:            {}", doc.name);
-    println!("Format version:  {}", doc.format_version);
-    println!("Nodes:           {}", doc.nodes.len());
-    println!("Canvas roots:    {}", doc.canvas.len());
-    println!("Views:           {}", doc.views.len());
-    println!("Color space:     {:?}", doc.working_color_space);
-
-    Ok(())
+    std::process::exit(exit_code);
 }
