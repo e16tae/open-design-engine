@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use crate::node::{NodeId, NodeTree};
 use crate::tokens::DesignTokens;
 
@@ -47,25 +47,21 @@ pub enum ViewKind {
 }
 
 // ─── Document ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Document {
     pub format_version: Version,
     pub name: String,
     pub nodes: NodeTree,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub canvas: Vec<CanvasRoot>,
-    #[serde(default)]
     pub tokens: DesignTokens,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub views: Vec<View>,
-    #[serde(default)]
     pub working_color_space: WorkingColorSpace,
 }
 
 impl Document {
     pub fn new(name: &str) -> Self {
         Self {
-            format_version: Version(0, 1, 0),
+            format_version: Version(0, 2, 0),
             name: name.to_string(),
             nodes: NodeTree::new(),
             canvas: Vec::new(),
@@ -85,7 +81,7 @@ mod tests {
     fn create_empty_document() {
         let doc = Document::new("My Design");
         assert_eq!(doc.name, "My Design");
-        assert_eq!(doc.format_version, Version(0, 1, 0));
+        assert_eq!(doc.format_version, Version(0, 2, 0));
         assert!(doc.canvas.is_empty());
         assert!(doc.views.is_empty());
     }

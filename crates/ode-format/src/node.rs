@@ -20,7 +20,7 @@ pub type StableId = String;
 ///
 /// Wraps `SlotMap<NodeId, Node>` so that `NodeTree::new()` works (custom
 /// slotmap key types require `with_key()` instead of `new()`).
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone)]
 pub struct NodeTree(SlotMap<NodeId, Node>);
 
 impl NodeTree {
@@ -38,6 +38,10 @@ impl NodeTree {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (NodeId, &Node)> {
+        self.0.iter()
     }
 }
 

@@ -4,6 +4,7 @@ pub mod typography;
 pub mod node;
 pub mod tokens;
 pub mod document;
+pub mod wire;
 
 pub use color::Color;
 pub use document::Document;

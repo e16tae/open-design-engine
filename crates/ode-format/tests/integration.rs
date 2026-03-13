@@ -74,7 +74,7 @@ fn full_document_roundtrip() {
     assert_eq!(parsed.name, "Integration Test");
     assert_eq!(parsed.canvas.len(), 1);
     assert_eq!(parsed.views.len(), 1);
-    assert_eq!(parsed.format_version, ode_format::document::Version(0, 1, 0));
+    assert_eq!(parsed.format_version, ode_format::document::Version(0, 2, 0));
 
     // Verify parent-child relationship survived roundtrip
     let parsed_frame_id = parsed.canvas[0];
