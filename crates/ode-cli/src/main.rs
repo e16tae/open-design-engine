@@ -36,17 +36,23 @@ enum Command {
     Build {
         /// Input file (or "-" for stdin)
         file: String,
-        /// Output PNG path
+        /// Output file path (PNG or SVG)
         #[arg(short, long)]
         output: String,
+        /// Output format: png, svg (auto-detected from extension if omitted)
+        #[arg(long)]
+        format: Option<String>,
     },
     /// Render without validation (fast path)
     Render {
         /// Input file (or "-" for stdin)
         file: String,
-        /// Output PNG path
+        /// Output file path (PNG or SVG)
         #[arg(short, long)]
         output: String,
+        /// Output format: png, svg (auto-detected from extension if omitted)
+        #[arg(long)]
+        format: Option<String>,
     },
     /// Inspect document structure
     Inspect {
@@ -73,11 +79,11 @@ fn main() {
         Command::Validate { file } => {
             commands::cmd_validate(&file)
         }
-        Command::Build { file, output } => {
-            commands::cmd_build(&file, &output)
+        Command::Build { file, output, format } => {
+            commands::cmd_build(&file, &output, format.as_deref())
         }
-        Command::Render { file, output } => {
-            commands::cmd_render(&file, &output)
+        Command::Render { file, output, format } => {
+            commands::cmd_render(&file, &output, format.as_deref())
         }
         Command::Inspect { file, full } => {
             commands::cmd_inspect(&file, full)

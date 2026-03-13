@@ -9,5 +9,7 @@ description = "ODE export engine — SVG, PNG, PDF output"
 ode-format = { path = "../ode-format" }
 ode-core = { path = "../ode-core" }
 tiny-skia = { workspace = true }
+kurbo = { workspace = true }
 image = { workspace = true }
+base64 = { workspace = true }
 thiserror = { workspace = true }

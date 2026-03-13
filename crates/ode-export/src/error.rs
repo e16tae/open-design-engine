@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum ExportError {
     #[error("PNG encoding failed: {0}")]
     PngEncodeFailed(String),
+    #[error("SVG generation failed: {0}")]
+    SvgGenerationFailed(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
