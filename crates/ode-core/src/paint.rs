@@ -186,7 +186,7 @@ fn sample_gradient(stops: &[ResolvedGradientStop], t: f32) -> tiny_skia::Color {
 }
 
 /// Generate an angular gradient pixmap (unclipped, full canvas).
-fn generate_angular_gradient_pixmap(
+pub fn generate_angular_gradient_pixmap(
     w: u32,
     h: u32,
     stops: &[ResolvedGradientStop],
@@ -213,7 +213,7 @@ fn generate_angular_gradient_pixmap(
 }
 
 /// Generate a diamond gradient pixmap (unclipped, full canvas).
-fn generate_diamond_gradient_pixmap(
+pub fn generate_diamond_gradient_pixmap(
     w: u32,
     h: u32,
     stops: &[ResolvedGradientStop],

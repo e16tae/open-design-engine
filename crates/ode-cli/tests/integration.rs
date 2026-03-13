@@ -107,6 +107,77 @@ fn build_creates_png() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+// ─── ode build (SVG) ───
+
+#[test]
+fn build_creates_svg_by_extension() {
+    let dir = std::env::temp_dir().join("ode_test_build_svg_ext");
+    std::fs::create_dir_all(&dir).ok();
+    let file = dir.join("design.ode.json");
+    let svg = dir.join("output.svg");
+
+    ode_cmd().args(["new", file.to_str().unwrap(), "--width", "64", "--height", "64"]).output().unwrap();
+
+    let output = ode_cmd()
+        .args(["build", file.to_str().unwrap(), "-o", svg.to_str().unwrap()])
+        .output().unwrap();
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let json = parse_json(&output);
+    assert_eq!(json["status"], "ok");
+    assert!(svg.exists());
+
+    let content = std::fs::read_to_string(&svg).unwrap();
+    assert!(content.starts_with("<?xml"), "Expected XML declaration, got: {}", &content[..50.min(content.len())]);
+    assert!(content.contains("<svg"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn build_creates_svg_by_format_flag() {
+    let dir = std::env::temp_dir().join("ode_test_build_svg_flag");
+    std::fs::create_dir_all(&dir).ok();
+    let file = dir.join("design.ode.json");
+    let out = dir.join("output.dat");
+
+    ode_cmd().args(["new", file.to_str().unwrap(), "--width", "32", "--height", "32"]).output().unwrap();
+
+    let output = ode_cmd()
+        .args(["build", file.to_str().unwrap(), "-o", out.to_str().unwrap(), "--format", "svg"])
+        .output().unwrap();
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(out.exists());
+
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(content.contains("<svg"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn render_creates_svg() {
+    let dir = std::env::temp_dir().join("ode_test_render_svg");
+    std::fs::create_dir_all(&dir).ok();
+    let file = dir.join("design.ode.json");
+    let svg = dir.join("render_out.svg");
+
+    ode_cmd().args(["new", file.to_str().unwrap(), "--width", "48", "--height", "48"]).output().unwrap();
+
+    let output = ode_cmd()
+        .args(["render", file.to_str().unwrap(), "-o", svg.to_str().unwrap()])
+        .output().unwrap();
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(svg.exists());
+
+    let content = std::fs::read_to_string(&svg).unwrap();
+    assert!(content.contains("<svg"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 // ─── ode inspect ───
 
 #[test]
