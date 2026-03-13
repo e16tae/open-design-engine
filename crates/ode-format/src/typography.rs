@@ -80,6 +80,58 @@ pub struct VariableFontAxis {
     pub value: StyleValue<f32>,
 }
 
+// ─── Text Runs ───
+
+/// Style range (byte offset based into TextData.content).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TextRun {
+    pub start: usize,
+    pub end: usize,
+    #[serde(default)]
+    pub style: TextRunStyle,
+}
+
+/// Partial style override for a text run. `None` = inherit from TextData.default_style.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+pub struct TextRunStyle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<StyleValue<FontFamily>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_weight: Option<StyleValue<FontWeight>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<StyleValue<f32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_height: Option<LineHeight>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter_spacing: Option<StyleValue<f32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decoration: Option<TextDecoration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<TextTransform>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opentype_features: Option<Vec<OpenTypeFeature>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable_axes: Option<Vec<VariableFontAxis>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fills: Option<Vec<crate::style::Fill>>,
+}
+
+/// Figma-compatible text sizing mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TextSizingMode {
+    /// Fixed width and height; clip on overflow.
+    Fixed,
+    /// Fixed width, height grows to fit content.
+    AutoHeight,
+    /// Width and height both grow to fit; only `\n` causes line breaks.
+    AutoWidth,
+}
+
+impl Default for TextSizingMode {
+    fn default() -> Self { Self::Fixed }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,5 +160,43 @@ mod tests {
         let json = serde_json::to_string(&axis).unwrap();
         let parsed: VariableFontAxis = serde_json::from_str(&json).unwrap();
         assert_eq!(axis, parsed);
+    }
+
+    #[test]
+    fn text_run_roundtrip() {
+        let run = TextRun {
+            start: 0,
+            end: 5,
+            style: TextRunStyle {
+                font_weight: Some(StyleValue::Raw(700)),
+                ..Default::default()
+            },
+        };
+        let json = serde_json::to_string(&run).unwrap();
+        let parsed: TextRun = serde_json::from_str(&json).unwrap();
+        assert_eq!(run, parsed);
+    }
+
+    #[test]
+    fn text_run_style_default_is_all_none() {
+        let style = TextRunStyle::default();
+        assert!(style.font_family.is_none());
+        assert!(style.font_weight.is_none());
+        assert!(style.font_size.is_none());
+        assert!(style.fills.is_none());
+    }
+
+    #[test]
+    fn text_sizing_mode_default_is_fixed() {
+        assert_eq!(TextSizingMode::default(), TextSizingMode::Fixed);
+    }
+
+    #[test]
+    fn text_sizing_mode_roundtrip() {
+        for mode in [TextSizingMode::Fixed, TextSizingMode::AutoHeight, TextSizingMode::AutoWidth] {
+            let json = serde_json::to_string(&mode).unwrap();
+            let parsed: TextSizingMode = serde_json::from_str(&json).unwrap();
+            assert_eq!(mode, parsed);
+        }
     }
 }

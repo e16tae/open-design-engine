@@ -9,3 +9,4 @@ pub mod scene;
 
 pub use scene::{Scene, RenderCommand, ResolvedPaint, ResolvedEffect};
 pub use render::Renderer;
+pub use ode_text::FontDatabase;

@@ -5,6 +5,7 @@ use schemars::JsonSchema;
 use slotmap::{new_key_type, SlotMap};
 
 use crate::style::{VisualProps, BlendMode};
+use crate::typography::{TextStyle, TextRun, TextSizingMode};
 
 // ─── IDs ───
 
@@ -256,11 +257,23 @@ pub struct BooleanOpData {
     pub children: Vec<NodeId>,
 }
 
+fn default_text_size() -> f32 { 100.0 }
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TextData {
     #[serde(default)]
     pub visual: VisualProps,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs: Vec<TextRun>,
+    #[serde(default)]
+    pub default_style: TextStyle,
+    #[serde(default = "default_text_size")]
+    pub width: f32,
+    #[serde(default = "default_text_size")]
+    pub height: f32,
+    #[serde(default)]
+    pub sizing_mode: TextSizingMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -369,6 +382,11 @@ impl Node {
             kind: NodeKind::Text(Box::new(TextData {
                 visual: VisualProps::default(),
                 content: content.to_string(),
+                runs: Vec::new(),
+                default_style: TextStyle::default(),
+                width: 100.0,
+                height: 100.0,
+                sizing_mode: TextSizingMode::Fixed,
             })),
         }
     }

@@ -1,0 +1,17 @@
+[package]
+name = "ode-text"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ODE text rendering — font loading, shaping, layout, and glyph outline extraction"
+
+[dependencies]
+ode-format = { path = "../ode-format" }
+skrifa = { workspace = true }
+rustybuzz = { workspace = true }
+unicode-linebreak = { workspace = true }
+kurbo = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

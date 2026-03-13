@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/ode-format",
+    "crates/ode-text",
     "crates/ode-core",
     "crates/ode-export",
     "crates/ode-cli",
@@ -58,6 +59,11 @@ base64 = "0.22"
 # Error handling
 thiserror = "2"
 anyhow = "1"
+
+# Text rendering
+skrifa = "0.22"
+rustybuzz = "0.18"
+unicode-linebreak = "0.1"
 
 # JSON Schema generation
 schemars = { version = "0.8" }

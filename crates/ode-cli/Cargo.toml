@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 ode-format = { path = "../ode-format" }
+ode-text = { path = "../ode-text" }
 ode-core = { path = "../ode-core" }
 ode-export = { path = "../ode-export" }
 clap = { workspace = true }
