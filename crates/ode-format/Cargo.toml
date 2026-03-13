@@ -12,3 +12,4 @@ kurbo = { workspace = true }
 nanoid = { workspace = true }
 slotmap = { workspace = true }
 thiserror = { workspace = true }
+schemars = { workspace = true }

@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 
 /// Color representation supporting multiple color spaces.
 /// Internal format is structured for performance; MCP tools handle
 /// CSS color string parsing (e.g., "#3b82f6", "oklch(0.6 0.2 250)").
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "space", rename_all = "lowercase")]
 pub enum Color {
     Srgb {

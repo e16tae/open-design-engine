@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 use crate::color::Color;
 
 // ─── Token ID Types (shared with tokens module) ───
@@ -7,19 +8,16 @@ pub type TokenId = u32;
 
 // ─── Token Reference ───
 /// Reference to a design token. Used by both StyleValue::Bound and TokenResolve::Alias.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct TokenRef {
     pub collection_id: CollectionId,
     pub token_id: TokenId,
 }
 
 // ─── StyleValue<T> ───
-/// Uses untagged serde representation so that `Raw(T)` serializes as the bare value
-/// (e.g., `1.0` for f32, `{"space":"srgb",...}` for Color) and `Bound` serializes
-/// as `{"token":...,"resolved":...}`. This avoids the serde limitation where an
-/// adjacently-tagged enum nested inside an internally-tagged enum (e.g., Paint uses
-/// `tag = "type"`) causes a "duplicate field `type`" deserialization error.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A value that is either a raw value or bound to a design token.
+/// Raw: bare value (e.g., `1.0`). Bound: `{"token":{...},"resolved":...}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum StyleValue<T> {
     Bound { token: TokenRef, resolved: T },
@@ -39,11 +37,11 @@ impl<T: Clone> StyleValue<T> {
 }
 
 // ─── Geometry ───
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Point { pub x: f32, pub y: f32 }
 
 // ─── BlendMode ───
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum BlendMode {
     Normal, Multiply, Screen, Overlay, Darken, Lighten,
@@ -55,7 +53,7 @@ impl Default for BlendMode {
 }
 
 // ─── Paint ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Paint {
     Solid { color: StyleValue<Color> },
@@ -67,28 +65,28 @@ pub enum Paint {
     ImageFill { source: ImageSource, mode: ImageFillMode },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct GradientStop { pub position: f32, pub color: StyleValue<Color> }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MeshGradientData { pub rows: u32, pub columns: u32, pub points: Vec<MeshPoint> }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MeshPoint { pub position: Point, pub color: StyleValue<Color> }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ImageSource {
     Embedded { data: Vec<u8> },
     Linked { path: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImageFillMode { Fill, Fit, Crop, Tile }
 
 // ─── Fill ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Fill {
     pub paint: Paint,
     pub opacity: StyleValue<f32>,
@@ -97,7 +95,7 @@ pub struct Fill {
 }
 
 // ─── Stroke ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Stroke {
     pub paint: Paint,
     pub width: StyleValue<f32>,
@@ -111,23 +109,23 @@ pub struct Stroke {
     pub visible: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum StrokePosition { Inside, Outside, Center }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum StrokeCap { Butt, Round, Square }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum StrokeJoin { Miter, Round, Bevel }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DashPattern { pub segments: Vec<f32>, pub offset: f32 }
 
 // ─── Effect ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Effect {
     DropShadow { color: StyleValue<Color>, offset: Point, blur: StyleValue<f32>, spread: StyleValue<f32> },
@@ -137,7 +135,7 @@ pub enum Effect {
 }
 
 // ─── Composable Property Structs ───
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 pub struct VisualProps {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fills: Vec<Fill>,

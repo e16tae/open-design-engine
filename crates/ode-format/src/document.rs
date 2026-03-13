@@ -1,9 +1,10 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use crate::node::{NodeId, NodeTree};
 use crate::tokens::DesignTokens;
 
 // ─── Version ───
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Version(pub u32, pub u32, pub u32);
 
 impl std::fmt::Display for Version {
@@ -13,11 +14,11 @@ impl std::fmt::Display for Version {
 }
 
 // ─── IDs ───
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct ViewId(pub u32);
 
 // ─── Working Color Space ───
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorkingColorSpace { Srgb, DisplayP3, AdobeRgb, ProPhotoRgb }
 
@@ -46,25 +47,21 @@ pub enum ViewKind {
 }
 
 // ─── Document ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Document {
     pub format_version: Version,
     pub name: String,
     pub nodes: NodeTree,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub canvas: Vec<CanvasRoot>,
-    #[serde(default)]
     pub tokens: DesignTokens,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub views: Vec<View>,
-    #[serde(default)]
     pub working_color_space: WorkingColorSpace,
 }
 
 impl Document {
     pub fn new(name: &str) -> Self {
         Self {
-            format_version: Version(0, 1, 0),
+            format_version: Version(0, 2, 0),
             name: name.to_string(),
             nodes: NodeTree::new(),
             canvas: Vec::new(),
@@ -84,7 +81,7 @@ mod tests {
     fn create_empty_document() {
         let doc = Document::new("My Design");
         assert_eq!(doc.name, "My Design");
-        assert_eq!(doc.format_version, Version(0, 1, 0));
+        assert_eq!(doc.format_version, Version(0, 2, 0));
         assert!(doc.canvas.is_empty());
         assert!(doc.views.is_empty());
     }

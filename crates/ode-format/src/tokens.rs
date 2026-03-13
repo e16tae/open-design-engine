@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 use thiserror::Error;
 use crate::color::Color;
 use crate::style::{CollectionId, TokenId, TokenRef};
@@ -21,7 +22,7 @@ pub enum TokenError {
 }
 
 // ─── TokenType ───
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TokenType {
     Color,
@@ -35,7 +36,7 @@ pub enum TokenType {
 }
 
 // ─── DimensionUnit ───
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DimensionUnit {
     Px,
@@ -48,7 +49,7 @@ pub enum DimensionUnit {
 }
 
 // ─── TokenValue ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
 pub enum TokenValue {
     Color(Color),
@@ -81,7 +82,7 @@ impl TokenValue {
 /// (adjacently tagged with its own `type`/`value` fields) and `Alias(TokenRef)` serializes
 /// as `{"collection_id":...,"token_id":...}`. Using internally-tagged here would produce
 /// a "duplicate field `type`" error because TokenValue is already adjacently tagged.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum TokenResolve {
     Direct(TokenValue),
@@ -89,7 +90,7 @@ pub enum TokenResolve {
 }
 
 // ─── Token ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Token {
     pub id: TokenId,
     pub name: std::string::String,
@@ -98,14 +99,14 @@ pub struct Token {
 }
 
 // ─── Mode ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Mode {
     pub id: ModeId,
     pub name: std::string::String,
 }
 
 // ─── TokenCollection ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TokenCollection {
     pub id: CollectionId,
     pub name: std::string::String,
@@ -115,15 +116,18 @@ pub struct TokenCollection {
 }
 
 // ─── DesignTokens ───
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignTokens {
     pub collections: Vec<TokenCollection>,
     pub active_modes: HashMap<CollectionId, ModeId>,
     #[serde(skip)]
+    #[schemars(skip)]
     next_collection_id: CollectionId,
     #[serde(skip)]
+    #[schemars(skip)]
     next_token_id: TokenId,
     #[serde(skip)]
+    #[schemars(skip)]
     next_mode_id: ModeId,
 }
 
@@ -476,5 +480,12 @@ mod tests {
         assert_eq!(val.token_type(), TokenType::Color);
         let val = TokenValue::Number(42.0);
         assert_eq!(val.token_type(), TokenType::Number);
+    }
+
+    #[test]
+    fn token_value_schema_generates() {
+        let schema = schemars::schema_for!(TokenValue);
+        let json = serde_json::to_string(&schema).unwrap();
+        assert!(json.contains("TokenValue"));
     }
 }
