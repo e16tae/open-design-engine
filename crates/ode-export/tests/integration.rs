@@ -25,7 +25,7 @@ fn document_to_png_red_frame() {
     doc.canvas.push(frame_id);
 
     // 2. Convert to scene
-    let scene = Scene::from_document(&doc).unwrap();
+    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new()).unwrap();
     assert!((scene.width - 64.0).abs() < f32::EPSILON);
     assert!((scene.height - 64.0).abs() < f32::EPSILON);
 
@@ -87,7 +87,7 @@ fn document_with_vector_path() {
     let frame_id = doc.nodes.insert(frame);
     doc.canvas.push(frame_id);
 
-    let scene = Scene::from_document(&doc).unwrap();
+    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new()).unwrap();
     let pixmap = Renderer::render(&scene).unwrap();
 
     // Bottom-center of the triangle should be blue
@@ -121,7 +121,7 @@ fn document_with_gradient_fill() {
     let frame_id = doc.nodes.insert(frame);
     doc.canvas.push(frame_id);
 
-    let scene = Scene::from_document(&doc).unwrap();
+    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new()).unwrap();
     let pixmap = Renderer::render(&scene).unwrap();
 
     // Left should be dark, right should be light

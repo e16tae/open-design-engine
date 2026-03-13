@@ -11,4 +11,4 @@ pub use document::Document;
 pub use node::{Node, NodeId, NodeKind, NodeTree, StableId, VectorPath, PathSegment, FillRule};
 pub use style::{StyleValue, BlendMode, Fill, Stroke, Effect, Paint, VisualProps, TokenRef, CollectionId, TokenId};
 pub use tokens::DesignTokens;
-pub use typography::{TextStyle, FontFamily, FontWeight};
+pub use typography::{TextStyle, FontFamily, FontWeight, TextRun, TextRunStyle, TextSizingMode};

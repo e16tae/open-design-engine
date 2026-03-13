@@ -11,6 +11,7 @@ use crate::node::{
 };
 use crate::style::{BlendMode, VisualProps};
 use crate::tokens::DesignTokens;
+use crate::typography::{TextRun, TextStyle, TextSizingMode};
 
 // ─── Error ───
 
@@ -24,6 +25,10 @@ pub enum WireError {
 
 fn default_opacity() -> f32 {
     1.0
+}
+
+fn default_text_size() -> f32 {
+    100.0
 }
 
 // ─── Wire Types ───
@@ -112,6 +117,16 @@ pub struct TextDataWire {
     #[serde(default)]
     pub visual: VisualProps,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs: Vec<TextRun>,
+    #[serde(default)]
+    pub default_style: TextStyle,
+    #[serde(default = "default_text_size")]
+    pub width: f32,
+    #[serde(default = "default_text_size")]
+    pub height: f32,
+    #[serde(default)]
+    pub sizing_mode: TextSizingMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -280,6 +295,11 @@ fn node_to_wire(node: &Node, resolve: &dyn Fn(&NodeId) -> String) -> NodeWire {
         NodeKind::Text(d) => NodeKindWire::Text(TextDataWire {
             visual: d.visual.clone(),
             content: d.content.clone(),
+            runs: d.runs.clone(),
+            default_style: d.default_style.clone(),
+            width: d.width,
+            height: d.height,
+            sizing_mode: d.sizing_mode,
         }),
         NodeKind::Image(d) => NodeKindWire::Image(ImageDataWire {
             visual: d.visual.clone(),
@@ -353,6 +373,11 @@ fn wire_kind_to_runtime(
         NodeKindWire::Text(d) => NodeKind::Text(Box::new(TextData {
             visual: d.visual.clone(),
             content: d.content.clone(),
+            runs: d.runs.clone(),
+            default_style: d.default_style.clone(),
+            width: d.width,
+            height: d.height,
+            sizing_mode: d.sizing_mode,
         })),
         NodeKindWire::Image(d) => NodeKind::Image(Box::new(ImageData {
             visual: d.visual.clone(),
@@ -501,6 +526,11 @@ mod tests {
                     kind: NodeKindWire::Text(TextDataWire {
                         visual: VisualProps::default(),
                         content: "Hello".to_string(),
+                        runs: Vec::new(),
+                        default_style: TextStyle::default(),
+                        width: 100.0,
+                        height: 100.0,
+                        sizing_mode: TextSizingMode::Fixed,
                     }),
                 },
             ],

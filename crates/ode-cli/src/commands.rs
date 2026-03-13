@@ -1,5 +1,5 @@
 use std::path::Path;
-use ode_core::{Renderer, Scene};
+use ode_core::{Renderer, Scene, FontDatabase};
 use ode_export::{PngExporter, SvgExporter};
 use ode_format::Document;
 use ode_format::wire::DocumentWire;
@@ -123,7 +123,8 @@ pub fn cmd_render(file: &str, output: &str, format: Option<&str>) -> i32 {
 }
 
 fn render_and_export(doc: &Document, output: &str, format: Option<&str>, warnings: Vec<Warning>) -> i32 {
-    let scene = match Scene::from_document(doc) {
+    let font_db = FontDatabase::new_system();
+    let scene = match Scene::from_document(doc, &font_db) {
         Ok(s) => s,
         Err(e) => {
             print_json(&ErrorResponse::new("RENDER_FAILED", "render", &e.to_string()));

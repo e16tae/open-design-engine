@@ -21,4 +21,6 @@ pub enum ConvertError {
     TokenError(#[from] ode_format::tokens::TokenError),
     #[error("document has no canvas roots")]
     NoCanvasRoots,
+    #[error("text rendering failed: {0}")]
+    TextError(#[from] ode_text::TextError),
 }

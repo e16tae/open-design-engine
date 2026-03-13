@@ -7,6 +7,7 @@ description = "ODE core engine — rendering pipeline, layout, and vector operat
 
 [dependencies]
 ode-format = { path = "../ode-format" }
+ode-text = { path = "../ode-text" }
 tiny-skia = { workspace = true }
 kurbo = { workspace = true }
 lyon = { workspace = true }
