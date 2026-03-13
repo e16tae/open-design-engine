@@ -29,7 +29,7 @@ pub fn validate_json(json: &str) -> ValidateResponse {
     for (i, node) in wire.nodes.iter().enumerate() {
         if !id_set.insert(&node.stable_id) {
             errors.push(ValidationIssue {
-                path: format!("nodes[{}].stable_id", i),
+                path: format!("nodes[{i}].stable_id"),
                 code: "DUPLICATE_ID".to_string(),
                 message: format!("duplicate stable_id '{}'", node.stable_id),
                 suggestion: None,
@@ -39,14 +39,14 @@ pub fn validate_json(json: &str) -> ValidateResponse {
     }
 
     // Helper: check reference validity
-    let available: String = format!("{:?}", all_ids);
+    let available: String = format!("{all_ids:?}");
     let mut check_ref = |path: &str, ref_id: &str| {
         if !id_set.contains(ref_id) {
             errors.push(ValidationIssue {
                 path: path.to_string(),
                 code: "INVALID_REFERENCE".to_string(),
-                message: format!("referenced stable_id '{}' not found", ref_id),
-                suggestion: Some(format!("available stable_ids: {}", available)),
+                message: format!("referenced stable_id '{ref_id}' not found"),
+                suggestion: Some(format!("available stable_ids: {available}")),
             });
         }
     };
@@ -56,7 +56,7 @@ pub fn validate_json(json: &str) -> ValidateResponse {
         let children = get_children_wire(&node.kind);
         for (j, child_id) in children.iter().enumerate() {
             check_ref(
-                &format!("nodes[{}].kind.children[{}]", i, j),
+                &format!("nodes[{i}].kind.children[{j}]"),
                 child_id,
             );
         }
@@ -64,7 +64,7 @@ pub fn validate_json(json: &str) -> ValidateResponse {
 
     // Check canvas references
     for (i, canvas_id) in wire.canvas.iter().enumerate() {
-        check_ref(&format!("canvas[{}]", i), canvas_id);
+        check_ref(&format!("canvas[{i}]"), canvas_id);
     }
 
     // Check view references
@@ -72,15 +72,15 @@ pub fn validate_json(json: &str) -> ValidateResponse {
         match &view.kind {
             ViewKindWire::Print { pages } => {
                 for (j, p) in pages.iter().enumerate() {
-                    check_ref(&format!("views[{}].kind.pages[{}]", i, j), p);
+                    check_ref(&format!("views[{i}].kind.pages[{j}]"), p);
                 }
             }
             ViewKindWire::Web { root } => {
-                check_ref(&format!("views[{}].kind.root", i), root);
+                check_ref(&format!("views[{i}].kind.root"), root);
             }
             ViewKindWire::Presentation { slides } => {
                 for (j, s) in slides.iter().enumerate() {
-                    check_ref(&format!("views[{}].kind.slides[{}]", i, j), s);
+                    check_ref(&format!("views[{i}].kind.slides[{j}]"), s);
                 }
             }
             ViewKindWire::Export { .. } => {}
@@ -127,8 +127,8 @@ fn check_circular_hierarchy(wire: &DocumentWire, errors: &mut Vec<ValidationIssu
     let mut in_stack = HashSet::new();
 
     for node in &wire.nodes {
-        if !visited.contains(node.stable_id.as_str()) {
-            if has_cycle(&adj, &node.stable_id, &mut visited, &mut in_stack) {
+        if !visited.contains(node.stable_id.as_str())
+            && has_cycle(&adj, &node.stable_id, &mut visited, &mut in_stack) {
                 errors.push(ValidationIssue {
                     path: format!("nodes (stable_id='{}')", node.stable_id),
                     code: "CIRCULAR_HIERARCHY".to_string(),
@@ -137,7 +137,6 @@ fn check_circular_hierarchy(wire: &DocumentWire, errors: &mut Vec<ValidationIssu
                 });
                 break;
             }
-        }
     }
 }
 
@@ -152,11 +151,9 @@ fn has_cycle<'a>(
 
     if let Some(children) = adj.get(node) {
         for child in children {
-            if !visited.contains(child) {
-                if has_cycle(adj, child, visited, in_stack) {
-                    return true;
-                }
-            } else if in_stack.contains(child) {
+            if (!visited.contains(child) && has_cycle(adj, child, visited, in_stack))
+                || in_stack.contains(child)
+            {
                 return true;
             }
         }
@@ -176,14 +173,14 @@ fn check_component_refs(wire: &DocumentWire, id_set: &HashSet<&str>, errors: &mu
         if let NodeKindWire::Instance(ref d) = node.kind {
             if !id_set.contains(d.source_component.as_str()) {
                 errors.push(ValidationIssue {
-                    path: format!("nodes[{}].kind.source_component", i),
+                    path: format!("nodes[{i}].kind.source_component"),
                     code: "INVALID_COMPONENT_REF".to_string(),
                     message: format!("source_component '{}' not found", d.source_component),
                     suggestion: None,
                 });
             } else if !component_ids.contains(d.source_component.as_str()) {
                 errors.push(ValidationIssue {
-                    path: format!("nodes[{}].kind.source_component", i),
+                    path: format!("nodes[{i}].kind.source_component"),
                     code: "INVALID_COMPONENT_REF".to_string(),
                     message: format!("source_component '{}' exists but has no component_def", d.source_component),
                     suggestion: None,
@@ -222,15 +219,13 @@ fn check_cmyk_warnings(wire: &DocumentWire, warnings: &mut Vec<Warning>) {
         };
         if let Some(vis) = visual {
             for (j, fill) in vis.fills.iter().enumerate() {
-                if let ode_format::style::Paint::Solid { color } = &fill.paint {
-                    if let ode_format::style::StyleValue::Raw(c) = color {
-                        if matches!(c, ode_format::color::Color::Cmyk { .. }) {
-                            warnings.push(Warning {
-                                path: format!("nodes[{}].kind.visual.fills[{}].paint.color", i, j),
-                                code: "CMYK_FALLBACK".to_string(),
-                                message: "CMYK color will fall back to black in PNG export".to_string(),
-                            });
-                        }
+                if let ode_format::style::Paint::Solid { color: ode_format::style::StyleValue::Raw(c) } = &fill.paint {
+                    if matches!(c, ode_format::color::Color::Cmyk { .. }) {
+                        warnings.push(Warning {
+                            path: format!("nodes[{i}].kind.visual.fills[{j}].paint.color"),
+                            code: "CMYK_FALLBACK".to_string(),
+                            message: "CMYK color will fall back to black in PNG export".to_string(),
+                        });
                     }
                 }
             }

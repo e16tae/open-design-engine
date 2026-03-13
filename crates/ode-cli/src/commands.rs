@@ -16,7 +16,7 @@ pub fn load_input(file: &str) -> Result<String, (i32, ErrorResponse)> {
     } else {
         std::fs::read_to_string(file)
             .map_err(|e| (EXIT_IO, ErrorResponse::new("IO_ERROR", "io",
-                &format!("failed to read '{}': {}", file, e))))
+                &format!("failed to read '{file}': {e}"))))
     }
 }
 
@@ -142,23 +142,17 @@ pub fn cmd_inspect(file: &str, full: bool) -> i32 {
         Err((code, err)) => { print_json(&err); return code; }
     };
 
+    let wire: DocumentWire = match serde_json::from_str(&json) {
+        Ok(w) => w,
+        Err(e) => {
+            print_json(&ErrorResponse::new("PARSE_FAILED", "parse", &e.to_string()));
+            return EXIT_INPUT;
+        }
+    };
+
     if full {
-        let wire: DocumentWire = match serde_json::from_str(&json) {
-            Ok(w) => w,
-            Err(e) => {
-                print_json(&ErrorResponse::new("PARSE_FAILED", "parse", &e.to_string()));
-                return EXIT_INPUT;
-            }
-        };
         print_json(&wire);
     } else {
-        let wire: DocumentWire = match serde_json::from_str(&json) {
-            Ok(w) => w,
-            Err(e) => {
-                print_json(&ErrorResponse::new("PARSE_FAILED", "parse", &e.to_string()));
-                return EXIT_INPUT;
-            }
-        };
         let summary = build_inspect_summary(&wire);
         print_json(&summary);
     }
@@ -206,7 +200,7 @@ fn build_inspect_summary(wire: &DocumentWire) -> InspectSummary {
     InspectSummary {
         name: wire.name.clone(),
         format_version: format!("{}.{}.{}", wire.format_version.0, wire.format_version.1, wire.format_version.2),
-        working_color_space: serde_json::to_value(&wire.working_color_space)
+        working_color_space: serde_json::to_value(wire.working_color_space)
             .ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
         node_count: wire.nodes.len(),
         canvas: wire.canvas.clone(),
@@ -262,7 +256,7 @@ pub fn cmd_schema(topic: Option<&str>) -> i32 {
         Some(unknown) => {
             print_json(&ErrorResponse::new(
                 "INVALID_TOPIC", "schema",
-                &format!("unknown schema topic '{}'. Available: document, node, paint, token, color", unknown),
+                &format!("unknown schema topic '{unknown}'. Available: document, node, paint, token, color"),
             ));
             return EXIT_INPUT;
         }

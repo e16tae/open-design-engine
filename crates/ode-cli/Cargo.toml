@@ -14,7 +14,6 @@ ode-format = { path = "../ode-format" }
 ode-core = { path = "../ode-core" }
 ode-export = { path = "../ode-export" }
 clap = { workspace = true }
-anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }

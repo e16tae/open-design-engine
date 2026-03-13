@@ -24,10 +24,6 @@ pub struct OkResponse {
 }
 
 impl OkResponse {
-    pub fn simple() -> Self {
-        Self { status: "ok", path: None, width: None, height: None, warnings: vec![] }
-    }
-
     pub fn with_path(path: &str) -> Self {
         Self { status: "ok", path: Some(path.to_string()), width: None, height: None, warnings: vec![] }
     }
@@ -107,6 +103,6 @@ impl ErrorResponse {
 
 pub fn print_json<T: Serialize>(value: &T) {
     println!("{}", serde_json::to_string(value).unwrap_or_else(|e| {
-        format!(r#"{{"status":"error","code":"INTERNAL","message":"JSON serialization failed: {}"}}"#, e)
+        format!(r#"{{"status":"error","code":"INTERNAL","message":"JSON serialization failed: {e}"}}"#)
     }));
 }
