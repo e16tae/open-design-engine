@@ -16,6 +16,9 @@ pub enum ImportError {
 
     #[error("Missing required field: {field} on node {node_id}")]
     MissingField { node_id: String, field: String },
+
+    #[error("SVG path parse error: {0}")]
+    PathParse(String),
 }
 
 #[derive(Debug, Clone)]
