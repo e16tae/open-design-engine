@@ -53,7 +53,7 @@ pub struct ValidationIssue {
     pub suggestion: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Warning {
     pub path: String,
     pub code: String,

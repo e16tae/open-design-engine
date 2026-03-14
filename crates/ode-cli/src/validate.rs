@@ -98,6 +98,9 @@ pub fn validate_json(json: &str) -> ValidateResponse {
     // Check token cycles by attempting resolution
     check_token_cycles(&wire, &mut errors);
 
+    // Check layout rules
+    check_layout_rules(&wire, &mut errors, &mut warnings);
+
     // Warnings: CMYK colors that will fall back
     check_cmyk_warnings(&wire, &mut warnings);
 
@@ -200,6 +203,71 @@ fn check_token_cycles(wire: &DocumentWire, errors: &mut Vec<ValidationIssue>) {
                         code: "CYCLIC_TOKEN".to_string(),
                         message: format!("token '{}' has a cyclic alias", tok.name),
                         suggestion: None,
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn check_layout_rules(
+    wire: &DocumentWire,
+    errors: &mut Vec<ValidationIssue>,
+    warnings: &mut Vec<Warning>,
+) {
+    for (i, node) in wire.nodes.iter().enumerate() {
+        // Check layout config on frames
+        if let NodeKindWire::Frame(ref d) = node.kind {
+            if let Some(ref layout) = d.container.layout {
+                let path_prefix = format!("nodes[{i}].kind.container.layout");
+                // Negative padding
+                if layout.padding.top < 0.0
+                    || layout.padding.right < 0.0
+                    || layout.padding.bottom < 0.0
+                    || layout.padding.left < 0.0
+                {
+                    errors.push(ValidationIssue {
+                        path: format!("{path_prefix}.padding"),
+                        code: "NEGATIVE_PADDING".to_string(),
+                        message: "layout padding values must not be negative".to_string(),
+                        suggestion: None,
+                    });
+                }
+                // Negative item_spacing
+                if layout.item_spacing < 0.0 {
+                    errors.push(ValidationIssue {
+                        path: format!("{path_prefix}.item_spacing"),
+                        code: "NEGATIVE_SPACING".to_string(),
+                        message: "item_spacing must not be negative".to_string(),
+                        suggestion: None,
+                    });
+                }
+            }
+        }
+
+        // Check layout_sizing constraints
+        if let Some(ref sizing) = node.layout_sizing {
+            let path_prefix = format!("nodes[{i}].layout_sizing");
+            // min > max warnings
+            if let (Some(min_w), Some(max_w)) = (sizing.min_width, sizing.max_width) {
+                if min_w > max_w {
+                    warnings.push(Warning {
+                        path: format!("{path_prefix}.min_width/max_width"),
+                        code: "MIN_EXCEEDS_MAX".to_string(),
+                        message: format!(
+                            "min_width ({min_w}) exceeds max_width ({max_w})"
+                        ),
+                    });
+                }
+            }
+            if let (Some(min_h), Some(max_h)) = (sizing.min_height, sizing.max_height) {
+                if min_h > max_h {
+                    warnings.push(Warning {
+                        path: format!("{path_prefix}.min_height/max_height"),
+                        code: "MIN_EXCEEDS_MAX".to_string(),
+                        message: format!(
+                            "min_height ({min_h}) exceeds max_height ({max_h})"
+                        ),
                     });
                 }
             }
@@ -317,5 +385,66 @@ mod tests {
         let result = validate_json("not json at all");
         assert!(!result.valid);
         assert!(result.errors.iter().any(|e| e.code == "PARSE_FAILED"));
+    }
+
+    #[test]
+    fn valid_layout_document_passes() {
+        let json = r#"{
+            "format_version": [0, 2, 0], "name": "Layout Test",
+            "nodes": [
+                {"stable_id": "root", "name": "Root", "type": "frame", "width": 300, "height": 200,
+                 "visual": {}, "container": {"layout": {"direction": "horizontal", "item-spacing": 8, "padding": {"top": 10, "right": 10, "bottom": 10, "left": 10}}}, "component_def": null}
+            ],
+            "canvas": ["root"], "tokens": {"collections": [], "active_modes": {}}, "views": []
+        }"#;
+        let result = validate_json(json);
+        assert!(result.valid, "Expected valid, got errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn negative_padding_detected() {
+        let json = r#"{
+            "format_version": [0, 2, 0], "name": "Test",
+            "nodes": [
+                {"stable_id": "root", "name": "Root", "type": "frame", "width": 100, "height": 100,
+                 "visual": {}, "container": {"layout": {"padding": {"top": -5, "right": 0, "bottom": 0, "left": 0}}}, "component_def": null}
+            ],
+            "canvas": ["root"], "tokens": {"collections": [], "active_modes": {}}, "views": []
+        }"#;
+        let result = validate_json(json);
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.code == "NEGATIVE_PADDING"));
+    }
+
+    #[test]
+    fn negative_spacing_detected() {
+        let json = r#"{
+            "format_version": [0, 2, 0], "name": "Test",
+            "nodes": [
+                {"stable_id": "root", "name": "Root", "type": "frame", "width": 100, "height": 100,
+                 "visual": {}, "container": {"layout": {"item-spacing": -3}}, "component_def": null}
+            ],
+            "canvas": ["root"], "tokens": {"collections": [], "active_modes": {}}, "views": []
+        }"#;
+        let result = validate_json(json);
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.code == "NEGATIVE_SPACING"));
+    }
+
+    #[test]
+    fn min_exceeds_max_warning() {
+        let json = r#"{
+            "format_version": [0, 2, 0], "name": "Test",
+            "nodes": [
+                {"stable_id": "root", "name": "Root", "type": "frame", "width": 100, "height": 100,
+                 "visual": {}, "container": {}, "component_def": null,
+                 "layout_sizing": {"width": "fixed", "height": "fixed", "min-width": 200, "max-width": 100}}
+            ],
+            "canvas": ["root"], "tokens": {"collections": [], "active_modes": {}}, "views": []
+        }"#;
+        let result = validate_json(json);
+        assert!(result.valid, "min > max should be a warning, not an error");
+        assert!(result.warnings.iter().any(|w| w.code == "MIN_EXCEEDS_MAX"),
+            "Expected MIN_EXCEEDS_MAX warning, got: {:?}", result.warnings);
     }
 }

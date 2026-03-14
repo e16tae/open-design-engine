@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::document::{Document, Version, View, ViewId, ViewKind, WorkingColorSpace};
 use crate::node::{
     BooleanOpData, BooleanOperation, ComponentDef, Constraints, FrameData, GroupData,
-    ImageData, InstanceData, LayoutConfig, Node, NodeId, NodeKind, NodeTree, StableId, TextData,
-    Transform, VectorData,
+    ImageData, InstanceData, LayoutConfig, LayoutSizing, Node, NodeId, NodeKind, NodeTree,
+    SizingMode, StableId, TextData, Transform, VectorData,
 };
 use crate::style::{BlendMode, VisualProps};
 use crate::tokens::DesignTokens;
@@ -59,6 +59,8 @@ pub struct NodeWire {
     #[serde(default)]
     pub blend_mode: BlendMode,
     pub constraints: Option<Constraints>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_sizing: Option<LayoutSizing>,
     #[serde(flatten)]
     pub kind: NodeKindWire,
 }
@@ -88,6 +90,10 @@ pub struct FrameDataWire {
     pub width: f32,
     #[serde(default)]
     pub height: f32,
+    #[serde(default)]
+    pub width_sizing: SizingMode,
+    #[serde(default)]
+    pub height_sizing: SizingMode,
     #[serde(default)]
     pub corner_radius: [f32; 4],
     #[serde(default)]
@@ -219,6 +225,7 @@ impl DocumentWire {
                 opacity: nw.opacity,
                 blend_mode: nw.blend_mode,
                 constraints: nw.constraints,
+                layout_sizing: nw.layout_sizing.clone(),
                 // Placeholder kind — will be overwritten in pass 2
                 kind: NodeKind::Group(Box::new(GroupData {
                     children: Vec::new(),
@@ -275,6 +282,8 @@ fn node_to_wire(node: &Node, resolve: &dyn Fn(&NodeId) -> String) -> NodeWire {
         NodeKind::Frame(d) => NodeKindWire::Frame(FrameDataWire {
             width: d.width,
             height: d.height,
+            width_sizing: d.width_sizing,
+            height_sizing: d.height_sizing,
             corner_radius: d.corner_radius,
             visual: d.visual.clone(),
             container: ContainerPropsWire {
@@ -321,6 +330,7 @@ fn node_to_wire(node: &Node, resolve: &dyn Fn(&NodeId) -> String) -> NodeWire {
         opacity: node.opacity,
         blend_mode: node.blend_mode,
         constraints: node.constraints,
+        layout_sizing: node.layout_sizing.clone(),
         kind,
     }
 }
@@ -340,6 +350,8 @@ fn wire_kind_to_runtime(
             NodeKind::Frame(Box::new(FrameData {
                 width: d.width,
                 height: d.height,
+                width_sizing: d.width_sizing,
+                height_sizing: d.height_sizing,
                 corner_radius: d.corner_radius,
                 visual: d.visual.clone(),
                 container: crate::node::ContainerProps {
@@ -504,9 +516,12 @@ mod tests {
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
                     constraints: None,
+                    layout_sizing: None,
                     kind: NodeKindWire::Frame(FrameDataWire {
                         width: 200.0,
                         height: 100.0,
+                        width_sizing: SizingMode::Fixed,
+                        height_sizing: SizingMode::Fixed,
                         corner_radius: [0.0; 4],
                         visual: VisualProps::default(),
                         container: ContainerPropsWire {
@@ -523,6 +538,7 @@ mod tests {
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
                     constraints: None,
+                    layout_sizing: None,
                     kind: NodeKindWire::Text(TextDataWire {
                         visual: VisualProps::default(),
                         content: "Hello".to_string(),
@@ -665,9 +681,12 @@ mod tests {
                 opacity: 1.0,
                 blend_mode: BlendMode::Normal,
                 constraints: None,
+                layout_sizing: None,
                 kind: NodeKindWire::Frame(FrameDataWire {
                     width: 100.0,
                     height: 100.0,
+                    width_sizing: SizingMode::Fixed,
+                    height_sizing: SizingMode::Fixed,
                     corner_radius: [0.0; 4],
                     visual: VisualProps::default(),
                     container: ContainerPropsWire {
