@@ -346,6 +346,8 @@ pub struct FrameData {
     pub height_sizing: SizingMode,
     #[serde(default)]
     pub corner_radius: [f32; 4],
+    #[serde(default = "default_clips_content")]
+    pub clips_content: bool,
     #[serde(default)]
     pub visual: VisualProps,
     #[serde(default)]
@@ -377,6 +379,8 @@ pub struct BooleanOpData {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<NodeId>,
 }
+
+fn default_clips_content() -> bool { true }
 
 fn default_text_size() -> f32 { 100.0 }
 
@@ -467,6 +471,8 @@ pub struct Node {
     pub opacity: f32,
     #[serde(default)]
     pub blend_mode: BlendMode,
+    #[serde(default = "default_visible")]
+    pub visible: bool,
     pub constraints: Option<Constraints>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout_sizing: Option<LayoutSizing>,
@@ -474,6 +480,7 @@ pub struct Node {
 }
 
 fn default_opacity() -> f32 { 1.0 }
+fn default_visible() -> bool { true }
 
 // Note: `impl Default for BlendMode` is in style.rs (where BlendMode is defined).
 
@@ -486,6 +493,7 @@ impl Node {
             transform: Transform::default(),
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
+            visible: true,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Frame(Box::new(FrameData {
@@ -494,6 +502,7 @@ impl Node {
                 width_sizing: SizingMode::Fixed,
                 height_sizing: SizingMode::Fixed,
                 corner_radius: [0.0; 4],
+                clips_content: true,
                 visual: VisualProps::default(),
                 container: ContainerProps::default(),
                 component_def: None,
@@ -509,6 +518,7 @@ impl Node {
             transform: Transform::default(),
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
+            visible: true,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Group(Box::new(GroupData { children: Vec::new() })),
@@ -523,6 +533,7 @@ impl Node {
             transform: Transform::default(),
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
+            visible: true,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Vector(Box::new(VectorData {
@@ -541,6 +552,7 @@ impl Node {
             transform: Transform::default(),
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
+            visible: true,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Text(Box::new(TextData {
@@ -563,6 +575,7 @@ impl Node {
             transform: Transform::default(),
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
+            visible: true,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::BooleanOp(Box::new(BooleanOpData {
@@ -581,6 +594,7 @@ impl Node {
             transform: Transform::default(),
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
+            visible: true,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Image(Box::new(ImageData { visual: VisualProps::default() })),
@@ -595,6 +609,7 @@ impl Node {
             transform: Transform::default(),
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
+            visible: true,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Instance(Box::new(InstanceData {
