@@ -5,6 +5,7 @@ members = [
     "crates/ode-text",
     "crates/ode-core",
     "crates/ode-export",
+    "crates/ode-import",
     "crates/ode-cli",
 ]
 
@@ -64,6 +65,12 @@ anyhow = "1"
 skrifa = "0.22"
 rustybuzz = "0.18"
 unicode-linebreak = "0.1"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 # JSON Schema generation
 schemars = { version = "0.8" }
