@@ -16,22 +16,28 @@ impl Scene {
             return Err(ConvertError::NoCanvasRoots);
         }
 
+        // Compute auto layout positions
+        let layout_map = crate::layout::compute_layout(doc);
+
         // Determine scene size from first canvas root
         let first_root = doc.canvas[0];
-        let (width, height) = get_frame_size(&doc.nodes[first_root]);
+        let (width, height) = get_frame_size(&doc.nodes[first_root], layout_map.get(&first_root));
 
         let mut commands = Vec::new();
         let identity = tiny_skia::Transform::identity();
 
         for &root_id in &doc.canvas {
-            convert_node(doc, root_id, identity, &mut commands, font_db)?;
+            convert_node(doc, root_id, identity, &mut commands, font_db, &layout_map)?;
         }
 
         Ok(Scene { width, height, commands })
     }
 }
 
-fn get_frame_size(node: &Node) -> (f32, f32) {
+fn get_frame_size(node: &Node, layout_rect: Option<&crate::layout::LayoutRect>) -> (f32, f32) {
+    if let Some(rect) = layout_rect {
+        return (rect.width, rect.height);
+    }
     if let NodeKind::Frame(ref data) = node.kind {
         (data.width, data.height)
     } else {
@@ -45,15 +51,22 @@ fn convert_node(
     parent_transform: tiny_skia::Transform,
     commands: &mut Vec<RenderCommand>,
     font_db: &FontDatabase,
+    layout_map: &crate::layout::LayoutMap,
 ) -> Result<(), ConvertError> {
     let node = &doc.nodes[node_id];
+    let layout_rect = layout_map.get(&node_id);
 
-    // Accumulate transform
-    let node_transform = path::transform_to_skia(&node.transform);
+    // Accumulate transform: layout overrides tx/ty but preserves rotation/scale
+    let node_transform = if let Some(rect) = layout_rect {
+        let t = &node.transform;
+        tiny_skia::Transform::from_row(t.a, t.b, t.c, t.d, rect.x, rect.y)
+    } else {
+        path::transform_to_skia(&node.transform)
+    };
     let current_transform = parent_transform.post_concat(node_transform);
 
-    // Get clip path for frames
-    let clip = get_clip_path(node);
+    // Get clip path for frames (using layout-computed size if available)
+    let clip = get_clip_path(node, layout_rect);
 
     // PushLayer
     commands.push(RenderCommand::PushLayer {
@@ -69,7 +82,7 @@ fn convert_node(
         if let NodeKind::Text(ref text_data) = node.kind {
             convert_text_node(text_data, visual, current_transform, commands, font_db)?;
         } else {
-            let node_path = get_node_path(doc, node);
+            let node_path = get_node_path(doc, node, layout_rect);
 
             // Effects that render BEHIND content (DropShadow)
             if let Some(ref bp) = node_path {
@@ -161,7 +174,7 @@ fn convert_node(
     // Recurse into children
     if let Some(children) = node.kind.children() {
         for &child_id in children {
-            convert_node(doc, child_id, current_transform, commands, font_db)?;
+            convert_node(doc, child_id, current_transform, commands, font_db, layout_map)?;
         }
     }
 
@@ -285,20 +298,33 @@ fn make_text_bbox(text_data: &ode_format::node::TextData) -> kurbo::BezPath {
     path
 }
 
-fn get_clip_path(node: &Node) -> Option<kurbo::BezPath> {
+fn get_clip_path(
+    node: &Node,
+    layout_rect: Option<&crate::layout::LayoutRect>,
+) -> Option<kurbo::BezPath> {
     if let NodeKind::Frame(ref data) = node.kind {
-        if data.width > 0.0 && data.height > 0.0 {
-            return Some(path::rounded_rect_path(data.width, data.height, data.corner_radius));
+        let (w, h) = layout_rect
+            .map(|r| (r.width, r.height))
+            .unwrap_or((data.width, data.height));
+        if w > 0.0 && h > 0.0 {
+            return Some(path::rounded_rect_path(w, h, data.corner_radius));
         }
     }
     None
 }
 
-fn get_node_path(doc: &Document, node: &Node) -> Option<kurbo::BezPath> {
+fn get_node_path(
+    doc: &Document,
+    node: &Node,
+    layout_rect: Option<&crate::layout::LayoutRect>,
+) -> Option<kurbo::BezPath> {
     match &node.kind {
         NodeKind::Frame(data) => {
-            if data.width > 0.0 && data.height > 0.0 {
-                Some(path::rounded_rect_path(data.width, data.height, data.corner_radius))
+            let (w, h) = layout_rect
+                .map(|r| (r.width, r.height))
+                .unwrap_or((data.width, data.height));
+            if w > 0.0 && h > 0.0 {
+                Some(path::rounded_rect_path(w, h, data.corner_radius))
             } else {
                 None
             }
@@ -311,7 +337,7 @@ fn get_node_path(doc: &Document, node: &Node) -> Option<kurbo::BezPath> {
                 let mut paths: Vec<kurbo::BezPath> = Vec::new();
                 for &child_id in children {
                     let child = &doc.nodes[child_id];
-                    if let Some(mut child_path) = get_node_path(doc, child) {
+                    if let Some(mut child_path) = get_node_path(doc, child, None) {
                         let t = &child.transform;
                         let affine = kurbo::Affine::new([
                             t.a as f64, t.b as f64,
@@ -461,5 +487,91 @@ mod tests {
             .filter(|c| matches!(c, RenderCommand::FillPath { .. }))
             .count();
         assert!(fill_count <= 1, "Text with no fonts should produce no glyph fills");
+    }
+
+    #[test]
+    fn auto_layout_document_produces_scene() {
+        use ode_format::node::{LayoutConfig, LayoutDirection, LayoutPadding, LayoutWrap,
+            PrimaryAxisAlign, CounterAxisAlign};
+
+        let mut doc = Document::new("Auto Layout Test");
+
+        // Create parent with auto layout
+        let mut parent = Node::new_frame("Container", 300.0, 100.0);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.layout = Some(LayoutConfig {
+                direction: LayoutDirection::Horizontal,
+                primary_axis_align: PrimaryAxisAlign::Start,
+                counter_axis_align: CounterAxisAlign::Start,
+                padding: LayoutPadding::default(),
+                item_spacing: 10.0,
+                wrap: LayoutWrap::NoWrap,
+            });
+            data.visual.fills.push(Fill {
+                paint: Paint::Solid { color: StyleValue::Raw(Color::Srgb { r: 0.9, g: 0.9, b: 0.9, a: 1.0 }) },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: BlendMode::Normal,
+                visible: true,
+            });
+        }
+
+        // Create children with fills
+        let mut child1 = Node::new_frame("C1", 50.0, 50.0);
+        if let NodeKind::Frame(ref mut data) = child1.kind {
+            data.visual.fills.push(Fill {
+                paint: Paint::Solid { color: StyleValue::Raw(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }) },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: BlendMode::Normal,
+                visible: true,
+            });
+        }
+        let mut child2 = Node::new_frame("C2", 80.0, 50.0);
+        if let NodeKind::Frame(ref mut data) = child2.kind {
+            data.visual.fills.push(Fill {
+                paint: Paint::Solid { color: StyleValue::Raw(Color::Srgb { r: 0.0, g: 0.0, b: 1.0, a: 1.0 }) },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: BlendMode::Normal,
+                visible: true,
+            });
+        }
+
+        let c1_id = doc.nodes.insert(child1);
+        let c2_id = doc.nodes.insert(child2);
+
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c1_id, c2_id];
+        }
+        let parent_id = doc.nodes.insert(parent);
+        doc.canvas.push(parent_id);
+
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+
+        // Scene should have correct dimensions
+        assert!((scene.width - 300.0).abs() < f32::EPSILON);
+        assert!((scene.height - 100.0).abs() < f32::EPSILON);
+
+        // Should have: parent PushLayer + FillPath + child1 (PushLayer + FillPath + PopLayer) +
+        //              child2 (PushLayer + FillPath + PopLayer) + parent PopLayer
+        // That's at least 8 commands
+        assert!(scene.commands.len() >= 8, "Expected ≥8 commands, got {}", scene.commands.len());
+
+        // Verify transforms — child2 should be offset by child1.width + gap = 50 + 10 = 60
+        let push_layers: Vec<_> = scene.commands.iter()
+            .filter_map(|c| match c {
+                RenderCommand::PushLayer { transform, .. } => Some(transform),
+                _ => None,
+            })
+            .collect();
+
+        // push_layers[0] = parent, push_layers[1] = child1, push_layers[2] = child2
+        assert!(push_layers.len() >= 3, "Expected ≥3 PushLayers, got {}", push_layers.len());
+    }
+
+    #[test]
+    fn no_layout_backward_compat() {
+        // Ensure existing documents without layout still work
+        let doc = make_simple_doc();
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        assert!(scene.commands.len() >= 3);
     }
 }

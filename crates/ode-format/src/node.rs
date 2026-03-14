@@ -111,10 +111,121 @@ pub struct ContainerProps {
     pub layout: Option<LayoutConfig>,
 }
 
-/// Placeholder for layout configuration (designed when taffy is integrated).
+/// Auto layout configuration for a container (Flexbox-based).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
 pub struct LayoutConfig {
-    _placeholder: (),
+    #[serde(default)]
+    pub direction: LayoutDirection,
+    #[serde(default)]
+    pub primary_axis_align: PrimaryAxisAlign,
+    #[serde(default)]
+    pub counter_axis_align: CounterAxisAlign,
+    #[serde(default)]
+    pub padding: LayoutPadding,
+    #[serde(default)]
+    pub item_spacing: f32,
+    #[serde(default)]
+    pub wrap: LayoutWrap,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum LayoutDirection {
+    Horizontal,
+    Vertical,
+}
+
+impl Default for LayoutDirection {
+    fn default() -> Self { Self::Horizontal }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PrimaryAxisAlign {
+    Start,
+    Center,
+    End,
+    SpaceBetween,
+}
+
+impl Default for PrimaryAxisAlign {
+    fn default() -> Self { Self::Start }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum CounterAxisAlign {
+    Start,
+    Center,
+    End,
+    Stretch,
+    Baseline,
+}
+
+impl Default for CounterAxisAlign {
+    fn default() -> Self { Self::Start }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutPadding {
+    #[serde(default)]
+    pub top: f32,
+    #[serde(default)]
+    pub right: f32,
+    #[serde(default)]
+    pub bottom: f32,
+    #[serde(default)]
+    pub left: f32,
+}
+
+impl Default for LayoutPadding {
+    fn default() -> Self {
+        Self { top: 0.0, right: 0.0, bottom: 0.0, left: 0.0 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum LayoutWrap {
+    NoWrap,
+    Wrap,
+}
+
+impl Default for LayoutWrap {
+    fn default() -> Self { Self::NoWrap }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum SizingMode {
+    Fixed,
+    Hug,
+    Fill,
+}
+
+impl Default for SizingMode {
+    fn default() -> Self { Self::Fixed }
+}
+
+/// Per-child layout sizing overrides within an auto-layout container.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub struct LayoutSizing {
+    #[serde(default)]
+    pub width: SizingMode,
+    #[serde(default)]
+    pub height: SizingMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align_self: Option<CounterAxisAlign>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_width: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_width: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_height: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_height: Option<f32>,
 }
 
 // ─── BooleanOperation ───
@@ -224,6 +335,10 @@ pub struct FrameData {
     #[serde(default)]
     pub height: f32,
     #[serde(default)]
+    pub width_sizing: SizingMode,
+    #[serde(default)]
+    pub height_sizing: SizingMode,
+    #[serde(default)]
     pub corner_radius: [f32; 4],
     #[serde(default)]
     pub visual: VisualProps,
@@ -312,6 +427,8 @@ pub struct Node {
     #[serde(default)]
     pub blend_mode: BlendMode,
     pub constraints: Option<Constraints>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_sizing: Option<LayoutSizing>,
     pub kind: NodeKind,
 }
 
@@ -329,9 +446,12 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             constraints: None,
+            layout_sizing: None,
             kind: NodeKind::Frame(Box::new(FrameData {
                 width,
                 height,
+                width_sizing: SizingMode::Fixed,
+                height_sizing: SizingMode::Fixed,
                 corner_radius: [0.0; 4],
                 visual: VisualProps::default(),
                 container: ContainerProps::default(),
@@ -349,6 +469,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             constraints: None,
+            layout_sizing: None,
             kind: NodeKind::Group(Box::new(GroupData { children: Vec::new() })),
         }
     }
@@ -362,6 +483,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             constraints: None,
+            layout_sizing: None,
             kind: NodeKind::Vector(Box::new(VectorData {
                 visual: VisualProps::default(),
                 path,
@@ -379,6 +501,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             constraints: None,
+            layout_sizing: None,
             kind: NodeKind::Text(Box::new(TextData {
                 visual: VisualProps::default(),
                 content: content.to_string(),
@@ -400,6 +523,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             constraints: None,
+            layout_sizing: None,
             kind: NodeKind::BooleanOp(Box::new(BooleanOpData {
                 visual: VisualProps::default(),
                 op,
@@ -417,6 +541,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             constraints: None,
+            layout_sizing: None,
             kind: NodeKind::Image(Box::new(ImageData { visual: VisualProps::default() })),
         }
     }
@@ -430,6 +555,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             constraints: None,
+            layout_sizing: None,
             kind: NodeKind::Instance(Box::new(InstanceData {
                 container: ContainerProps::default(),
                 source_component,
@@ -568,6 +694,77 @@ mod tests {
             assert!((data.width - 0.0).abs() < f32::EPSILON);
             assert!((data.height - 0.0).abs() < f32::EPSILON);
             assert_eq!(data.corner_radius, [0.0; 4]);
+            // New sizing fields default to Fixed
+            assert_eq!(data.width_sizing, SizingMode::Fixed);
+            assert_eq!(data.height_sizing, SizingMode::Fixed);
+        } else {
+            panic!("Expected Frame");
+        }
+    }
+
+    #[test]
+    fn layout_config_serde_roundtrip() {
+        let config = LayoutConfig {
+            direction: LayoutDirection::Vertical,
+            primary_axis_align: PrimaryAxisAlign::SpaceBetween,
+            counter_axis_align: CounterAxisAlign::Stretch,
+            padding: LayoutPadding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 },
+            item_spacing: 12.0,
+            wrap: LayoutWrap::Wrap,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: LayoutConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, parsed);
+    }
+
+    #[test]
+    fn layout_config_defaults() {
+        let json = "{}";
+        let config: LayoutConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.direction, LayoutDirection::Horizontal);
+        assert_eq!(config.primary_axis_align, PrimaryAxisAlign::Start);
+        assert_eq!(config.counter_axis_align, CounterAxisAlign::Start);
+        assert!((config.item_spacing - 0.0).abs() < f32::EPSILON);
+        assert_eq!(config.wrap, LayoutWrap::NoWrap);
+    }
+
+    #[test]
+    fn layout_sizing_serde_roundtrip() {
+        let sizing = LayoutSizing {
+            width: SizingMode::Fill,
+            height: SizingMode::Hug,
+            align_self: Some(CounterAxisAlign::Center),
+            min_width: Some(50.0),
+            max_width: Some(200.0),
+            min_height: None,
+            max_height: None,
+        };
+        let json = serde_json::to_string(&sizing).unwrap();
+        let parsed: LayoutSizing = serde_json::from_str(&json).unwrap();
+        assert_eq!(sizing, parsed);
+    }
+
+    #[test]
+    fn sizing_mode_defaults_to_fixed() {
+        let json = "{}";
+        let sizing: LayoutSizing = serde_json::from_str(json).unwrap();
+        assert_eq!(sizing.width, SizingMode::Fixed);
+        assert_eq!(sizing.height, SizingMode::Fixed);
+        assert!(sizing.align_self.is_none());
+    }
+
+    #[test]
+    fn existing_json_without_layout_fields_deserializes() {
+        // Simulate pre-layout JSON (no layout_sizing, no width_sizing/height_sizing)
+        let json = r#"{
+            "type": "frame",
+            "width": 100, "height": 50,
+            "visual": {}, "container": {}, "component_def": null
+        }"#;
+        let kind: NodeKind = serde_json::from_str(json).unwrap();
+        if let NodeKind::Frame(data) = kind {
+            assert_eq!(data.width_sizing, SizingMode::Fixed);
+            assert_eq!(data.height_sizing, SizingMode::Fixed);
         } else {
             panic!("Expected Frame");
         }
