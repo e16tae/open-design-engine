@@ -23,4 +23,6 @@ pub enum ConvertError {
     NoCanvasRoots,
     #[error("text rendering failed: {0}")]
     TextError(#[from] ode_text::TextError),
+    #[error("instance cycle detected: {0}")]
+    InstanceCycle(String),
 }

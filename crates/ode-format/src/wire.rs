@@ -7,7 +7,7 @@ use crate::document::{Document, Version, View, ViewId, ViewKind, WorkingColorSpa
 use crate::node::{
     BooleanOpData, BooleanOperation, ComponentDef, Constraints, FrameData, GroupData,
     ImageData, InstanceData, LayoutConfig, LayoutSizing, Node, NodeId, NodeKind, NodeTree,
-    SizingMode, StableId, TextData, Transform, VectorData,
+    Override, SizingMode, StableId, TextData, Transform, VectorData,
 };
 use crate::style::{BlendMode, VisualProps};
 use crate::tokens::DesignTokens;
@@ -146,8 +146,12 @@ pub struct InstanceDataWire {
     #[serde(default)]
     pub container: ContainerPropsWire,
     pub source_component: StableId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<f32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub overrides: Vec<serde_json::Value>,
+    pub overrides: Vec<Override>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -319,6 +323,8 @@ fn node_to_wire(node: &Node, resolve: &dyn Fn(&NodeId) -> String) -> NodeWire {
                 layout: d.container.layout.clone(),
             },
             source_component: d.source_component.clone(),
+            width: d.width,
+            height: d.height,
             overrides: d.overrides.clone(),
         }),
     };
@@ -407,6 +413,8 @@ fn wire_kind_to_runtime(
                     layout: d.container.layout.clone(),
                 },
                 source_component: d.source_component.clone(),
+                width: d.width,
+                height: d.height,
                 overrides: d.overrides.clone(),
             }))
         }

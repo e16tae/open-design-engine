@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
 use slotmap::{new_key_type, SlotMap};
 
-use crate::style::{VisualProps, BlendMode};
+use crate::style::{VisualProps, BlendMode, Fill, Stroke, Effect};
 use crate::typography::{TextStyle, TextRun, TextSizingMode};
 
 // ─── IDs ───
@@ -43,6 +43,12 @@ impl NodeTree {
 
     pub fn iter(&self) -> impl Iterator<Item = (NodeId, &Node)> {
         self.0.iter()
+    }
+
+    /// Find a node by its stable_id (linear scan).
+    /// For hot paths, build a `HashMap<&str, NodeId>` index instead.
+    pub fn find_by_stable_id(&self, stable_id: &str) -> Option<NodeId> {
+        self.0.iter().find(|(_, n)| n.stable_id == stable_id).map(|(id, _)| id)
     }
 }
 
@@ -397,13 +403,48 @@ pub struct ImageData {
     pub visual: VisualProps,
 }
 
+/// Target a node within the component tree by its stable_id.
+/// Since stable_ids are globally unique, a single StableId suffices.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum Override {
+    Fills { target: StableId, fills: Vec<Fill> },
+    Strokes { target: StableId, strokes: Vec<Stroke> },
+    Effects { target: StableId, effects: Vec<Effect> },
+    Opacity { target: StableId, opacity: f32 },
+    BlendMode { target: StableId, blend_mode: BlendMode },
+    Visible { target: StableId, visible: bool },
+    Size { target: StableId, width: Option<f32>, height: Option<f32> },
+    TextContent { target: StableId, content: String },
+}
+
+impl Override {
+    /// Returns the stable_id of the node this override targets.
+    pub fn target(&self) -> &str {
+        match self {
+            Self::Fills { target, .. }
+            | Self::Strokes { target, .. }
+            | Self::Effects { target, .. }
+            | Self::Opacity { target, .. }
+            | Self::BlendMode { target, .. }
+            | Self::Visible { target, .. }
+            | Self::Size { target, .. }
+            | Self::TextContent { target, .. } => target,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InstanceData {
     #[serde(default)]
     pub container: ContainerProps,
     pub source_component: StableId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<f32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub overrides: Vec<serde_json::Value>,
+    pub overrides: Vec<Override>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -559,6 +600,8 @@ impl Node {
             kind: NodeKind::Instance(Box::new(InstanceData {
                 container: ContainerProps::default(),
                 source_component,
+                width: None,
+                height: None,
                 overrides: Vec::new(),
             })),
         }
@@ -768,5 +811,117 @@ mod tests {
         } else {
             panic!("Expected Frame");
         }
+    }
+
+    // ─── Override Tests ───
+
+    #[test]
+    fn override_fills_serde_roundtrip() {
+        let overrides = vec![
+            Override::Fills {
+                target: "node-1".to_string(),
+                fills: vec![Fill {
+                    paint: Paint::Solid { color: StyleValue::Raw(Color::Srgb { r: 0.0, g: 0.0, b: 1.0, a: 1.0 }) },
+                    opacity: StyleValue::Raw(1.0),
+                    blend_mode: BlendMode::Normal,
+                    visible: true,
+                }],
+            },
+            Override::Strokes {
+                target: "node-2".to_string(),
+                strokes: vec![],
+            },
+            Override::Effects {
+                target: "node-1".to_string(),
+                effects: vec![],
+            },
+            Override::Opacity {
+                target: "node-3".to_string(),
+                opacity: 0.5,
+            },
+            Override::BlendMode {
+                target: "node-3".to_string(),
+                blend_mode: BlendMode::Multiply,
+            },
+            Override::Visible {
+                target: "node-4".to_string(),
+                visible: false,
+            },
+            Override::Size {
+                target: "node-1".to_string(),
+                width: Some(200.0),
+                height: None,
+            },
+            Override::TextContent {
+                target: "text-1".to_string(),
+                content: "Overridden text".to_string(),
+            },
+        ];
+        let json = serde_json::to_string(&overrides).unwrap();
+        let parsed: Vec<Override> = serde_json::from_str(&json).unwrap();
+        assert_eq!(overrides, parsed);
+    }
+
+    #[test]
+    fn override_target_accessor() {
+        let ov = Override::Fills {
+            target: "my-node".to_string(),
+            fills: vec![],
+        };
+        assert_eq!(ov.target(), "my-node");
+
+        let ov2 = Override::TextContent {
+            target: "text-abc".to_string(),
+            content: "hello".to_string(),
+        };
+        assert_eq!(ov2.target(), "text-abc");
+    }
+
+    #[test]
+    fn instance_data_with_typed_overrides_roundtrip() {
+        let inst = InstanceData {
+            container: ContainerProps::default(),
+            source_component: "comp-1".to_string(),
+            width: Some(150.0),
+            height: None,
+            overrides: vec![
+                Override::Visible {
+                    target: "child-1".to_string(),
+                    visible: false,
+                },
+            ],
+        };
+        let json = serde_json::to_string(&inst).unwrap();
+        let parsed: InstanceData = serde_json::from_str(&json).unwrap();
+        assert_eq!(inst, parsed);
+    }
+
+    #[test]
+    fn instance_data_empty_overrides_roundtrip() {
+        let inst = InstanceData {
+            container: ContainerProps::default(),
+            source_component: "comp-1".to_string(),
+            width: None,
+            height: None,
+            overrides: vec![],
+        };
+        let json = serde_json::to_string(&inst).unwrap();
+        assert!(!json.contains("overrides")); // skip_serializing_if = "Vec::is_empty"
+        let parsed: InstanceData = serde_json::from_str(&json).unwrap();
+        assert_eq!(inst, parsed);
+    }
+
+    #[test]
+    fn find_by_stable_id_returns_correct_node() {
+        let mut tree = NodeTree::new();
+        let mut node = Node::new_frame("Target", 50.0, 50.0);
+        node.stable_id = "find-me".to_string();
+        let expected_id = tree.insert(node);
+
+        let other = Node::new_frame("Other", 100.0, 100.0);
+        tree.insert(other);
+
+        assert_eq!(tree.find_by_stable_id("find-me"), Some(expected_id));
+        assert_eq!(tree.find_by_stable_id("nonexistent"), None);
     }
 }

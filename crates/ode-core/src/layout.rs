@@ -24,28 +24,33 @@ pub type LayoutMap = HashMap<NodeId, LayoutRect>;
 /// Walks the node tree depth-first, computing layout for each auto-layout
 /// container subtree using taffy. Returns a map of NodeId → LayoutRect
 /// for all nodes that participate in auto layout.
-pub fn compute_layout(doc: &Document) -> LayoutMap {
+pub fn compute_layout<'a>(doc: &'a Document, stable_id_index: &HashMap<&'a str, NodeId>) -> LayoutMap {
     let mut result = LayoutMap::new();
     for &root_id in &doc.canvas {
-        walk_for_layout(doc, root_id, &mut result);
+        walk_for_layout(doc, root_id, &mut result, stable_id_index);
     }
     result
 }
 
 /// Depth-first walk: compute children first (bottom-up), then this node.
-fn walk_for_layout(doc: &Document, node_id: NodeId, result: &mut LayoutMap) {
+fn walk_for_layout(
+    doc: &Document,
+    node_id: NodeId,
+    result: &mut LayoutMap,
+    stable_id_index: &HashMap<&str, NodeId>,
+) {
     let node = &doc.nodes[node_id];
 
     // Recurse into children first (bottom-up for nested auto layout)
     if let Some(children) = node.kind.children() {
         for &child_id in children {
-            walk_for_layout(doc, child_id, result);
+            walk_for_layout(doc, child_id, result, stable_id_index);
         }
     }
 
     // If this node is an auto-layout container, compute its subtree
     if let Some(config) = get_layout_config(node) {
-        compute_subtree_layout(doc, node_id, config, result);
+        compute_subtree_layout(doc, node_id, config, result, stable_id_index);
     }
 }
 
@@ -59,9 +64,15 @@ fn get_layout_config(node: &Node) -> Option<&LayoutConfig> {
 }
 
 /// Get the intrinsic (declared) size of a node.
-/// For frames, uses width/height. For nested auto-layout containers,
-/// uses the already-computed LayoutRect if available.
-fn get_intrinsic_size(node: &Node, node_id: NodeId, result: &LayoutMap) -> (f32, f32) {
+/// For frames, uses width/height. For instances, resolves from source component.
+/// For nested auto-layout containers, uses the already-computed LayoutRect if available.
+fn get_intrinsic_size(
+    node: &Node,
+    node_id: NodeId,
+    result: &LayoutMap,
+    doc: &Document,
+    stable_id_index: &HashMap<&str, NodeId>,
+) -> (f32, f32) {
     // If this node already has a computed layout (nested auto-layout container),
     // use that as its intrinsic size.
     if let Some(rect) = result.get(&node_id) {
@@ -71,6 +82,23 @@ fn get_intrinsic_size(node: &Node, node_id: NodeId, result: &LayoutMap) -> (f32,
     match &node.kind {
         NodeKind::Frame(data) => (data.width, data.height),
         NodeKind::Text(data) => (data.width, data.height),
+        NodeKind::Instance(data) => {
+            // Use instance's own size overrides, falling back to component's size
+            let comp_size = stable_id_index
+                .get(data.source_component.as_str())
+                .and_then(|&comp_id| {
+                    if let NodeKind::Frame(ref fd) = doc.nodes[comp_id].kind {
+                        Some((fd.width, fd.height))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((0.0, 0.0));
+            (
+                data.width.unwrap_or(comp_size.0),
+                data.height.unwrap_or(comp_size.1),
+            )
+        }
         // For other node types, use a default size
         _ => (0.0, 0.0),
     }
@@ -82,6 +110,7 @@ fn compute_subtree_layout(
     container_id: NodeId,
     config: &LayoutConfig,
     result: &mut LayoutMap,
+    stable_id_index: &HashMap<&str, NodeId>,
 ) {
     let container_node = &doc.nodes[container_id];
     let children = match container_node.kind.children() {
@@ -97,7 +126,8 @@ fn compute_subtree_layout(
 
     for &child_id in children {
         let child_node = &doc.nodes[child_id];
-        let (intrinsic_w, intrinsic_h) = get_intrinsic_size(child_node, child_id, result);
+        let (intrinsic_w, intrinsic_h) =
+            get_intrinsic_size(child_node, child_id, result, doc, stable_id_index);
         let already_laid_out = result.contains_key(&child_id);
         let child_style =
             build_child_style(child_node, intrinsic_w, intrinsic_h, config, already_laid_out);
@@ -411,6 +441,16 @@ mod tests {
         frame
     }
 
+    /// Helper: build stable_id index and compute layout.
+    fn test_compute_layout(doc: &Document) -> LayoutMap {
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        compute_layout(doc, &index)
+    }
+
     fn default_config() -> LayoutConfig {
         LayoutConfig {
             direction: LayoutDirection::Horizontal,
@@ -443,7 +483,7 @@ mod tests {
         let parent_id = doc.nodes.insert(parent);
         doc.canvas.push(parent_id);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
 
         // Children should be placed left-to-right
         let r1 = layout.get(&c1_id).expect("C1 should have layout");
@@ -486,7 +526,7 @@ mod tests {
         let parent_id = doc.nodes.insert(parent);
         doc.canvas.push(parent_id);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
 
         let r1 = layout.get(&c1_id).unwrap();
         let r2 = layout.get(&c2_id).unwrap();
@@ -519,7 +559,7 @@ mod tests {
         let parent_id = doc.nodes.insert(parent);
         doc.canvas.push(parent_id);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
 
         // Container should shrink to child size
         let parent_rect = layout.get(&parent_id).expect("Parent should have layout (hug)");
@@ -556,7 +596,7 @@ mod tests {
         let parent_id = doc.nodes.insert(parent);
         doc.canvas.push(parent_id);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
 
         let r1 = layout.get(&c1_id).unwrap();
         let r2 = layout.get(&c2_id).unwrap();
@@ -604,7 +644,7 @@ mod tests {
         let outer_id = doc.nodes.insert(outer);
         doc.canvas.push(outer_id);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
 
         // Inner container should be 60x44 (hug: w=60, h=20+4+20=44)
         let inner_rect = layout.get(&inner_id).unwrap();
@@ -626,7 +666,7 @@ mod tests {
         let parent_id = doc.nodes.insert(parent);
         doc.canvas.push(parent_id);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
         // No children means no layout entries (container is Fixed so not stored either)
         assert!(layout.is_empty());
     }
@@ -639,7 +679,7 @@ mod tests {
         let fid = doc.nodes.insert(frame);
         doc.canvas.push(fid);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
         assert!(layout.is_empty());
     }
 
@@ -666,7 +706,7 @@ mod tests {
         let parent_id = doc.nodes.insert(parent);
         doc.canvas.push(parent_id);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
         let r = layout.get(&c_id).unwrap();
 
         // Centered horizontally: (200 - 50) / 2 = 75
@@ -700,7 +740,7 @@ mod tests {
         let parent_id = doc.nodes.insert(parent);
         doc.canvas.push(parent_id);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
 
         let r1 = layout.get(&c1_id).unwrap();
         let r2 = layout.get(&c2_id).unwrap();
@@ -737,7 +777,7 @@ mod tests {
         let parent_id = doc.nodes.insert(parent);
         doc.canvas.push(parent_id);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
         let r = layout.get(&c_id).unwrap();
 
         assert!((r.width - 50.0).abs() < 0.1, "w = {}", r.width);
@@ -775,11 +815,92 @@ mod tests {
         let parent_id = doc.nodes.insert(parent);
         doc.canvas.push(parent_id);
 
-        let layout = compute_layout(&doc);
+        let layout = test_compute_layout(&doc);
         let r = layout.get(&c_id).unwrap();
 
         // Cross-axis Fill → stretches to container width
         assert!((r.width - 200.0).abs() < 0.1, "w = {}", r.width);
         assert!((r.height - 60.0).abs() < 0.1, "h = {}", r.height);
+    }
+
+    #[test]
+    fn instance_inherits_component_frame_size() {
+        use ode_format::node::ComponentDef;
+
+        let mut doc = Document::new("Instance Layout Test");
+
+        // Create a component frame 80x40
+        let mut comp = Node::new_frame("ButtonComp", 80.0, 40.0);
+        let comp_stable = comp.stable_id.clone();
+        if let NodeKind::Frame(ref mut data) = comp.kind {
+            data.component_def = Some(ComponentDef {
+                name: "Button".to_string(),
+                description: "".to_string(),
+            });
+        }
+        doc.nodes.insert(comp);
+
+        // Create an instance (no size override → should inherit 80x40)
+        let instance = Node::new_instance("ButtonInst", comp_stable);
+        let inst_id = doc.nodes.insert(instance);
+
+        // Parent auto-layout container
+        let config = default_config();
+        let mut parent = make_auto_layout_frame("Container", 300.0, 100.0, config);
+        let fixed_child = Node::new_frame("Fixed", 50.0, 50.0);
+        let fixed_id = doc.nodes.insert(fixed_child);
+
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![fixed_id, inst_id];
+        }
+        let parent_id = doc.nodes.insert(parent);
+        doc.canvas.push(parent_id);
+
+        let layout = test_compute_layout(&doc);
+
+        // Instance should be placed after the fixed child at x=50
+        let inst_rect = layout.get(&inst_id).unwrap();
+        assert!((inst_rect.x - 50.0).abs() < 0.1, "inst.x = {}", inst_rect.x);
+        assert!((inst_rect.width - 80.0).abs() < 0.1, "inst.w = {}", inst_rect.width);
+        assert!((inst_rect.height - 40.0).abs() < 0.1, "inst.h = {}", inst_rect.height);
+    }
+
+    #[test]
+    fn instance_with_size_override_in_auto_layout() {
+        use ode_format::node::ComponentDef;
+
+        let mut doc = Document::new("Instance Size Override Test");
+
+        // Component 80x40
+        let mut comp = Node::new_frame("Comp", 80.0, 40.0);
+        let comp_stable = comp.stable_id.clone();
+        if let NodeKind::Frame(ref mut data) = comp.kind {
+            data.component_def = Some(ComponentDef {
+                name: "Comp".to_string(),
+                description: "".to_string(),
+            });
+        }
+        doc.nodes.insert(comp);
+
+        // Instance with size override: 120x60
+        let mut instance = Node::new_instance("Inst", comp_stable);
+        if let NodeKind::Instance(ref mut data) = instance.kind {
+            data.width = Some(120.0);
+            data.height = Some(60.0);
+        }
+        let inst_id = doc.nodes.insert(instance);
+
+        let config = default_config();
+        let mut parent = make_auto_layout_frame("Container", 300.0, 100.0, config);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![inst_id];
+        }
+        let parent_id = doc.nodes.insert(parent);
+        doc.canvas.push(parent_id);
+
+        let layout = test_compute_layout(&doc);
+        let inst_rect = layout.get(&inst_id).unwrap();
+        assert!((inst_rect.width - 120.0).abs() < 0.1, "inst.w = {}", inst_rect.width);
+        assert!((inst_rect.height - 60.0).abs() < 0.1, "inst.h = {}", inst_rect.height);
     }
 }
