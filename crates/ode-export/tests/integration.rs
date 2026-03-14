@@ -3,7 +3,7 @@ use ode_format::document::Document;
 use ode_format::node::{Node, NodeKind, VectorPath, PathSegment};
 use ode_format::style::*;
 use ode_core::{Scene, Renderer};
-use ode_export::PngExporter;
+use ode_export::{PdfExporter, PngExporter};
 
 /// End-to-end: Build document → convert to scene → render → export PNG → verify pixels
 #[test]
@@ -129,4 +129,41 @@ fn document_with_gradient_fill() {
     let right = pixmap.pixel(95, 5).unwrap();
     assert!(left.red() < 50, "Left should be dark, got r={}", left.red());
     assert!(right.red() > 200, "Right should be light, got r={}", right.red());
+}
+
+/// End-to-end: Build document → convert to scene → export PDF → verify magic bytes & file
+#[test]
+fn document_to_pdf_red_frame() {
+    // 1. Build document with a red-filled frame
+    let mut doc = Document::new("PDF E2E Test");
+    let mut frame = Node::new_frame("Red Box", 64.0, 64.0);
+    if let NodeKind::Frame(ref mut data) = frame.kind {
+        data.visual.fills.push(Fill {
+            paint: Paint::Solid {
+                color: StyleValue::Raw(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }),
+            },
+            opacity: StyleValue::Raw(1.0),
+            blend_mode: BlendMode::Normal,
+            visible: true,
+        });
+    }
+    let frame_id = doc.nodes.insert(frame);
+    doc.canvas.push(frame_id);
+
+    // 2. Convert to scene
+    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new()).unwrap();
+    assert!((scene.width - 64.0).abs() < f32::EPSILON);
+
+    // 3. Export to PDF bytes
+    let pdf_bytes = PdfExporter::export_bytes(&scene).unwrap();
+    assert!(!pdf_bytes.is_empty());
+    assert_eq!(&pdf_bytes[..5], b"%PDF-");
+
+    // 4. Write to temp file and verify
+    let path = std::env::temp_dir().join("ode_e2e_red_frame.pdf");
+    PdfExporter::export(&scene, &path).unwrap();
+    assert!(path.exists());
+    let file_bytes = std::fs::read(&path).unwrap();
+    assert_eq!(pdf_bytes, file_bytes);
+    std::fs::remove_file(&path).ok();
 }

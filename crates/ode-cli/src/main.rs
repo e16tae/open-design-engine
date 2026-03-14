@@ -36,10 +36,10 @@ enum Command {
     Build {
         /// Input file (or "-" for stdin)
         file: String,
-        /// Output file path (PNG or SVG)
+        /// Output file path (PNG, SVG, or PDF)
         #[arg(short, long)]
         output: String,
-        /// Output format: png, svg (auto-detected from extension if omitted)
+        /// Output format: png, svg, pdf (auto-detected from extension if omitted)
         #[arg(long)]
         format: Option<String>,
     },
@@ -47,10 +47,10 @@ enum Command {
     Render {
         /// Input file (or "-" for stdin)
         file: String,
-        /// Output file path (PNG or SVG)
+        /// Output file path (PNG, SVG, or PDF)
         #[arg(short, long)]
         output: String,
-        /// Output format: png, svg (auto-detected from extension if omitted)
+        /// Output format: png, svg, pdf (auto-detected from extension if omitted)
         #[arg(long)]
         format: Option<String>,
     },

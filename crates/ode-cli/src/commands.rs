@@ -1,22 +1,25 @@
 use std::path::Path;
 use ode_core::{Renderer, Scene, FontDatabase};
-use ode_export::{PngExporter, SvgExporter};
+use ode_export::{PdfExporter, PngExporter, SvgExporter};
 use ode_format::Document;
 use ode_format::wire::DocumentWire;
 use crate::output::*;
 use crate::validate::validate_json;
 
-enum ExportFormat { Png, Svg }
+enum ExportFormat { Png, Svg, Pdf }
 
 fn detect_format(output: &str, format_flag: Option<&str>) -> ExportFormat {
     if let Some(f) = format_flag {
         return match f.to_lowercase().as_str() {
             "svg" => ExportFormat::Svg,
+            "pdf" => ExportFormat::Pdf,
             _ => ExportFormat::Png,
         };
     }
     if output.ends_with(".svg") {
         ExportFormat::Svg
+    } else if output.ends_with(".pdf") {
+        ExportFormat::Pdf
     } else {
         ExportFormat::Png
     }
@@ -136,6 +139,17 @@ fn render_and_export(doc: &Document, output: &str, format: Option<&str>, warning
         ExportFormat::Svg => {
             // SVG: Scene IR → SVG directly (skip rasterization)
             if let Err(e) = SvgExporter::export(&scene, Path::new(output)) {
+                print_json(&ErrorResponse::new("EXPORT_FAILED", "export", &e.to_string()));
+                return EXIT_PROCESS;
+            }
+            let mut resp = OkResponse::with_render(output, scene.width as u32, scene.height as u32);
+            resp.warnings = warnings;
+            print_json(&resp);
+            EXIT_OK
+        }
+        ExportFormat::Pdf => {
+            // PDF: Scene IR → PDF directly (skip rasterization)
+            if let Err(e) = PdfExporter::export(&scene, Path::new(output)) {
                 print_json(&ErrorResponse::new("EXPORT_FAILED", "export", &e.to_string()));
                 return EXIT_PROCESS;
             }
