@@ -95,6 +95,9 @@ pub fn validate_json(json: &str) -> ValidateResponse {
     // Check Instance source_component references
     check_component_refs(&wire, &id_set, &mut errors);
 
+    // Check override targets
+    check_override_targets(&wire, &id_set, &mut errors);
+
     // Check token cycles by attempting resolution
     check_token_cycles(&wire, &mut errors);
 
@@ -138,7 +141,6 @@ fn check_circular_hierarchy(wire: &DocumentWire, errors: &mut Vec<ValidationIssu
                     message: "circular parent-child relationship detected".to_string(),
                     suggestion: None,
                 });
-                break;
             }
     }
 }
@@ -188,6 +190,105 @@ fn check_component_refs(wire: &DocumentWire, id_set: &HashSet<&str>, errors: &mu
                     message: format!("source_component '{}' exists but has no component_def", d.source_component),
                     suggestion: None,
                 });
+            }
+        }
+    }
+}
+
+fn check_override_targets(wire: &DocumentWire, id_set: &HashSet<&str>, errors: &mut Vec<ValidationIssue>) {
+    // Build adjacency map and node kind map
+    let adj: HashMap<&str, Vec<&str>> = wire.nodes.iter()
+        .map(|n| (n.stable_id.as_str(), get_children_wire(&n.kind)))
+        .collect();
+
+    let node_kinds: HashMap<&str, &NodeKindWire> = wire
+        .nodes
+        .iter()
+        .map(|n| (n.stable_id.as_str(), &n.kind))
+        .collect();
+
+    // Cache descendant sets per component to avoid recomputation
+    let mut descendant_cache: HashMap<&str, HashSet<&str>> = HashMap::new();
+
+    for (i, node) in wire.nodes.iter().enumerate() {
+        if let NodeKindWire::Instance(ref d) = node.kind {
+            // Build/retrieve descendant set for this instance's source component
+            let descendants = descendant_cache
+                .entry(d.source_component.as_str())
+                .or_insert_with(|| {
+                    let mut desc = HashSet::new();
+                    let mut stack = vec![d.source_component.as_str()];
+                    while let Some(current) = stack.pop() {
+                        if desc.insert(current) {
+                            if let Some(children) = adj.get(current) {
+                                stack.extend(children.iter());
+                            }
+                        }
+                    }
+                    desc
+                });
+
+            for (j, ov) in d.overrides.iter().enumerate() {
+                let target = ov.target();
+                let path_prefix = format!("nodes[{i}].kind.overrides[{j}]");
+
+                // Check target exists
+                if !id_set.contains(target) {
+                    errors.push(ValidationIssue {
+                        path: format!("{path_prefix}.target"),
+                        code: "INVALID_OVERRIDE_TARGET".to_string(),
+                        message: format!("override target '{}' not found", target),
+                        suggestion: None,
+                    });
+                    continue;
+                }
+
+                // Check target is within component subtree
+                if !descendants.contains(target) {
+                    errors.push(ValidationIssue {
+                        path: format!("{path_prefix}.target"),
+                        code: "OVERRIDE_TARGET_NOT_IN_COMPONENT".to_string(),
+                        message: format!(
+                            "override target '{}' is not a descendant of source_component '{}'",
+                            target, d.source_component
+                        ),
+                        suggestion: None,
+                    });
+                    continue;
+                }
+
+                // Size override on component root is invalid — use instance width/height instead
+                if let ode_format::node::Override::Size { .. } = ov {
+                    if target == d.source_component.as_str() {
+                        errors.push(ValidationIssue {
+                            path: format!("{path_prefix}.target"),
+                            code: "SIZE_OVERRIDE_ON_COMPONENT_ROOT".to_string(),
+                            message: format!(
+                                "Size override targets component root '{}'; use instance width/height fields instead",
+                                target
+                            ),
+                            suggestion: Some("set width/height on the instance node directly".to_string()),
+                        });
+                        continue;
+                    }
+                }
+
+                // Check type compatibility
+                if let Some(kind) = node_kinds.get(target) {
+                    if let ode_format::node::Override::TextContent { .. } = ov {
+                        if !matches!(kind, NodeKindWire::Text(_)) {
+                            errors.push(ValidationIssue {
+                                path: format!("{path_prefix}.type"),
+                                code: "OVERRIDE_TYPE_MISMATCH".to_string(),
+                                message: format!(
+                                    "TextContent override targets '{}' which is not a Text node",
+                                    target
+                                ),
+                                suggestion: None,
+                            });
+                        }
+                    }
+                }
             }
         }
     }
@@ -446,5 +547,115 @@ mod tests {
         assert!(result.valid, "min > max should be a warning, not an error");
         assert!(result.warnings.iter().any(|w| w.code == "MIN_EXCEEDS_MAX"),
             "Expected MIN_EXCEEDS_MAX warning, got: {:?}", result.warnings);
+    }
+
+    // ─── Override Validation Tests ───
+
+    #[test]
+    fn valid_instance_with_overrides_passes() {
+        let json = r#"{
+            "format_version": [0, 2, 0], "name": "Test",
+            "nodes": [
+                {"stable_id": "comp", "name": "Comp", "type": "frame", "width": 100, "height": 50,
+                 "visual": {}, "container": {}, "component_def": {"name": "Button", "description": ""}},
+                {"stable_id": "inst", "name": "Inst", "type": "instance",
+                 "container": {}, "source_component": "comp",
+                 "overrides": [{"type": "visible", "target": "comp", "visible": false}]}
+            ],
+            "canvas": ["comp"], "tokens": {"collections": [], "active_modes": {}}, "views": []
+        }"#;
+        let result = validate_json(json);
+        assert!(result.valid, "Valid instance with overrides should pass, got errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn invalid_override_target_detected() {
+        let json = r#"{
+            "format_version": [0, 2, 0], "name": "Test",
+            "nodes": [
+                {"stable_id": "comp", "name": "Comp", "type": "frame", "width": 100, "height": 50,
+                 "visual": {}, "container": {}, "component_def": {"name": "Button", "description": ""}},
+                {"stable_id": "inst", "name": "Inst", "type": "instance",
+                 "container": {}, "source_component": "comp",
+                 "overrides": [{"type": "visible", "target": "nonexistent", "visible": false}]}
+            ],
+            "canvas": ["comp"], "tokens": {"collections": [], "active_modes": {}}, "views": []
+        }"#;
+        let result = validate_json(json);
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.code == "INVALID_OVERRIDE_TARGET"),
+            "Expected INVALID_OVERRIDE_TARGET, got: {:?}", result.errors);
+    }
+
+    #[test]
+    fn override_type_mismatch_detected() {
+        let json = r#"{
+            "format_version": [0, 2, 0], "name": "Test",
+            "nodes": [
+                {"stable_id": "comp", "name": "Comp", "type": "frame", "width": 100, "height": 50,
+                 "visual": {}, "container": {"children": ["child"]},
+                 "component_def": {"name": "Card", "description": ""}},
+                {"stable_id": "child", "name": "Child", "type": "frame", "width": 50, "height": 50,
+                 "visual": {}, "container": {}, "component_def": null},
+                {"stable_id": "inst", "name": "Inst", "type": "instance",
+                 "container": {}, "source_component": "comp",
+                 "overrides": [{"type": "text-content", "target": "child", "content": "hello"}]}
+            ],
+            "canvas": ["comp"], "tokens": {"collections": [], "active_modes": {}}, "views": []
+        }"#;
+        let result = validate_json(json);
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.code == "OVERRIDE_TYPE_MISMATCH"),
+            "Expected OVERRIDE_TYPE_MISMATCH, got: {:?}", result.errors);
+    }
+
+    #[test]
+    fn override_target_not_in_component_subtree() {
+        // CompA has child_a, CompB has child_b
+        // Instance of CompA overrides child_b — which is NOT in CompA's subtree
+        let json = r#"{
+            "format_version": [0, 2, 0], "name": "Test",
+            "nodes": [
+                {"stable_id": "child_a", "name": "ChildA", "type": "frame", "width": 30, "height": 30,
+                 "visual": {}, "container": {}, "component_def": null},
+                {"stable_id": "comp_a", "name": "CompA", "type": "frame", "width": 100, "height": 50,
+                 "visual": {}, "container": {"children": ["child_a"]},
+                 "component_def": {"name": "CompA", "description": ""}},
+                {"stable_id": "child_b", "name": "ChildB", "type": "frame", "width": 30, "height": 30,
+                 "visual": {}, "container": {}, "component_def": null},
+                {"stable_id": "comp_b", "name": "CompB", "type": "frame", "width": 100, "height": 50,
+                 "visual": {}, "container": {"children": ["child_b"]},
+                 "component_def": {"name": "CompB", "description": ""}},
+                {"stable_id": "inst", "name": "InstA", "type": "instance",
+                 "container": {}, "source_component": "comp_a",
+                 "overrides": [{"type": "visible", "target": "child_b", "visible": false}]}
+            ],
+            "canvas": ["comp_a", "comp_b"], "tokens": {"collections": [], "active_modes": {}}, "views": []
+        }"#;
+        let result = validate_json(json);
+        assert!(!result.valid,
+            "Override targeting node outside component subtree should fail, got: {:?}", result.errors);
+        assert!(result.errors.iter().any(|e| e.code == "OVERRIDE_TARGET_NOT_IN_COMPONENT"),
+            "Expected OVERRIDE_TARGET_NOT_IN_COMPONENT, got: {:?}", result.errors);
+    }
+
+    #[test]
+    fn size_override_on_component_root_rejected() {
+        let json = r#"{
+            "format_version": [0, 2, 0], "name": "Test",
+            "nodes": [
+                {"stable_id": "comp", "name": "Comp", "type": "frame", "width": 100, "height": 50,
+                 "visual": {}, "container": {},
+                 "component_def": {"name": "Box", "description": ""}},
+                {"stable_id": "inst", "name": "Inst", "type": "instance",
+                 "container": {}, "source_component": "comp",
+                 "overrides": [{"type": "size", "target": "comp", "width": 200, "height": 100}]}
+            ],
+            "canvas": ["comp"], "tokens": {"collections": [], "active_modes": {}}, "views": []
+        }"#;
+        let result = validate_json(json);
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.code == "SIZE_OVERRIDE_ON_COMPONENT_ROOT"),
+            "Expected SIZE_OVERRIDE_ON_COMPONENT_ROOT, got: {:?}", result.errors);
     }
 }
