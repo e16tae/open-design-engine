@@ -1,0 +1,36 @@
+{
+    "name": "Warning Test",
+    "document": {
+        "id": "0:0",
+        "name": "Document",
+        "type": "DOCUMENT",
+        "children": [{
+            "id": "0:1",
+            "name": "Page 1",
+            "type": "CANVAS",
+            "children": [
+                {
+                    "id": "1:1",
+                    "name": "Sticky Note",
+                    "type": "STICKY"
+                },
+                {
+                    "id": "2:1",
+                    "name": "Normal Frame",
+                    "type": "FRAME",
+                    "fills": [{"type": "VIDEO"}],
+                    "strokes": [],
+                    "effects": [{"type": "NOISE", "visible": true}],
+                    "blendMode": "LINEAR_BURN",
+                    "size": {"x": 100, "y": 100},
+                    "relativeTransform": [[1,0,0],[0,1,0]],
+                    "children": []
+                }
+            ]
+        }]
+    },
+    "components": {},
+    "componentSets": {},
+    "schemaVersion": 0,
+    "styles": {}
+}
