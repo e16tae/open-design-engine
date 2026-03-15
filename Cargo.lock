@@ -1145,6 +1145,7 @@ dependencies = [
 name = "ode-core"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "i_overlay",
  "image",
  "kurbo 0.11.3",

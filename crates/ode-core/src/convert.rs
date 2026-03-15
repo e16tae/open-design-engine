@@ -126,6 +126,17 @@ fn convert_node(
         // Text nodes use glyph-based rendering instead of a single path
         if let NodeKind::Text(ref text_data) = node.kind {
             convert_text_node(text_data, visual, current_transform, commands, font_db)?;
+        } else if let NodeKind::Image(ref img_data) = node.kind {
+            // Image nodes: emit DrawImage first, then visual overlays (strokes/effects)
+            emit_image(img_data, current_transform, commands);
+            let node_path = get_node_path(doc, node, layout_rect);
+            emit_visual(
+                visual,
+                &node_path,
+                get_fill_rule(node),
+                current_transform,
+                commands,
+            );
         } else {
             let node_path = get_node_path(doc, node, layout_rect);
             emit_visual(
@@ -270,6 +281,41 @@ fn emit_visual(
             Effect::DropShadow { .. } => {} // Already handled above
         }
     }
+}
+
+/// Emit a DrawImage command for an Image node if it has a usable source.
+fn emit_image(
+    img_data: &ode_format::node::ImageData,
+    current_transform: tiny_skia::Transform,
+    commands: &mut Vec<RenderCommand>,
+) {
+    if img_data.width <= 0.0 || img_data.height <= 0.0 {
+        return;
+    }
+
+    let image_bytes = match &img_data.source {
+        Some(ode_format::style::ImageSource::Embedded { data }) => {
+            if data.is_empty() {
+                return;
+            }
+            data.clone()
+        }
+        Some(ode_format::style::ImageSource::Linked { path }) => {
+            // Try to read from disk; skip gracefully if it fails
+            match std::fs::read(path) {
+                Ok(bytes) => bytes,
+                Err(_) => return,
+            }
+        }
+        None => return,
+    };
+
+    commands.push(RenderCommand::DrawImage {
+        data: image_bytes,
+        width: img_data.width,
+        height: img_data.height,
+        transform: current_transform,
+    });
 }
 
 // ─── Instance Resolution ───
@@ -773,6 +819,13 @@ fn get_node_path(
                 .unwrap_or((data.width, data.height));
             if w > 0.0 && h > 0.0 {
                 Some(path::rounded_rect_path(w, h, data.corner_radius))
+            } else {
+                None
+            }
+        }
+        NodeKind::Image(data) => {
+            if data.width > 0.0 && data.height > 0.0 {
+                Some(path::rounded_rect_path(data.width, data.height, [0.0; 4]))
             } else {
                 None
             }
@@ -1743,6 +1796,84 @@ mod tests {
             fill_count, 4,
             "Component + instance should each render 2 children fills, got {}",
             fill_count
+        );
+    }
+
+    // ─── Image Node Tests ───
+
+    /// Minimal 1x1 red PNG for tests.
+    fn minimal_png_bytes() -> Vec<u8> {
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        STANDARD
+            .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
+            .unwrap()
+    }
+
+    #[test]
+    fn image_node_with_embedded_source_produces_draw_image() {
+        use ode_format::style::ImageSource;
+
+        let mut doc = Document::new("ImageTest");
+        let mut frame = Node::new_frame("Root", 200.0, 150.0);
+        let mut img = Node::new_image("Photo", 100.0, 80.0);
+        if let NodeKind::Image(ref mut data) = img.kind {
+            data.source = Some(ImageSource::Embedded {
+                data: minimal_png_bytes(),
+            });
+        }
+        let img_id = doc.nodes.insert(img);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.container.children.push(img_id);
+        }
+        let frame_id = doc.nodes.insert(frame);
+        doc.canvas.push(frame_id);
+
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+
+        let draw_image_count = scene
+            .commands
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::DrawImage { .. }))
+            .count();
+        assert_eq!(
+            draw_image_count, 1,
+            "Expected 1 DrawImage command, got {}",
+            draw_image_count
+        );
+
+        // Verify dimensions on the DrawImage command
+        if let Some(RenderCommand::DrawImage { width, height, .. }) = scene
+            .commands
+            .iter()
+            .find(|c| matches!(c, RenderCommand::DrawImage { .. }))
+        {
+            assert!((*width - 100.0).abs() < f32::EPSILON);
+            assert!((*height - 80.0).abs() < f32::EPSILON);
+        }
+    }
+
+    #[test]
+    fn image_node_without_source_produces_no_draw_image() {
+        let mut doc = Document::new("ImageTest");
+        let mut frame = Node::new_frame("Root", 200.0, 150.0);
+        let img = Node::new_image("NoSource", 100.0, 80.0);
+        let img_id = doc.nodes.insert(img);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.container.children.push(img_id);
+        }
+        let frame_id = doc.nodes.insert(frame);
+        doc.canvas.push(frame_id);
+
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let draw_image_count = scene
+            .commands
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::DrawImage { .. }))
+            .count();
+        assert_eq!(
+            draw_image_count, 0,
+            "Expected 0 DrawImage commands, got {}",
+            draw_image_count
         );
     }
 }

@@ -36,6 +36,17 @@ pub enum RenderCommand {
         stroke: StrokeStyle,
         transform: tiny_skia::Transform,
     },
+    /// Draw a raster image (PNG/JPEG bytes) at the given bounds.
+    DrawImage {
+        /// Raw image bytes (PNG/JPEG)
+        data: Vec<u8>,
+        /// Display bounds width
+        width: f32,
+        /// Display bounds height
+        height: f32,
+        /// Transform matrix
+        transform: tiny_skia::Transform,
+    },
     /// Apply an effect to the current layer.
     ApplyEffect { effect: ResolvedEffect },
 }
