@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::error::ConvertError;
 use crate::path;
@@ -89,6 +89,7 @@ fn convert_node(
     // Instance nodes delegate to resolve_instance instead of normal rendering
     if let NodeKind::Instance(ref inst_data) = node.kind {
         let mut resolution_stack = Vec::new();
+        let mut resolution_set = HashSet::new();
         return resolve_instance(
             doc,
             node,
@@ -100,6 +101,7 @@ fn convert_node(
             layout_map,
             stable_id_index,
             &mut resolution_stack,
+            &mut resolution_set,
         );
     }
 
@@ -376,13 +378,14 @@ fn apply_blend_mode_override(base: BlendMode, overrides: &[&Override]) -> BlendM
 }
 
 /// Check if a node should be visible, considering a Visible override.
-fn is_visible(overrides: &[&Override]) -> bool {
+/// Falls back to `base_visible` (the node's own `visible` field) if no override is found.
+fn is_visible(base_visible: bool, overrides: &[&Override]) -> bool {
     for ov in overrides {
         if let Override::Visible { visible, .. } = ov {
             return *visible;
         }
     }
-    true
+    base_visible
 }
 
 /// Resolve and render an Instance node by expanding its source component.
@@ -398,9 +401,10 @@ fn resolve_instance(
     layout_map: &crate::layout::LayoutMap,
     stable_id_index: &StableIdIndex,
     resolution_stack: &mut Vec<String>,
+    resolution_set: &mut HashSet<String>,
 ) -> Result<(), ConvertError> {
-    // Cycle detection
-    if resolution_stack.contains(&inst_data.source_component) {
+    // Cycle detection (O(1) lookup via HashSet)
+    if resolution_set.contains(&inst_data.source_component) {
         return Err(ConvertError::InstanceCycle(format!(
             "{} → {}",
             resolution_stack.join(" → "),
@@ -425,6 +429,7 @@ fn resolve_instance(
     };
 
     resolution_stack.push(inst_data.source_component.clone());
+    resolution_set.insert(inst_data.source_component.clone());
 
     // Instance layer transform
     let node_transform = if let Some(rect) = layout_rect {
@@ -458,8 +463,9 @@ fn resolve_instance(
         .get(comp_node.stable_id.as_str())
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
-    if !is_visible(root_overrides) {
+    if !is_visible(comp_node.visible, root_overrides) {
         resolution_stack.pop();
+        resolution_set.remove(&inst_data.source_component);
         return Ok(());
     }
 
@@ -501,12 +507,14 @@ fn resolve_instance(
             stable_id_index,
             &override_map,
             resolution_stack,
+            resolution_set,
         )?;
     }
 
     // PopLayer
     commands.push(RenderCommand::PopLayer);
 
+    resolution_set.remove(&inst_data.source_component);
     resolution_stack.pop();
     Ok(())
 }
@@ -523,17 +531,18 @@ fn convert_component_child(
     stable_id_index: &StableIdIndex,
     override_map: &HashMap<&str, Vec<&Override>>,
     resolution_stack: &mut Vec<String>,
+    resolution_set: &mut HashSet<String>,
 ) -> Result<(), ConvertError> {
     let child = &doc.nodes[child_id];
 
-    // Check visibility override
+    // Check visibility override (falls back to base node visibility)
     let child_overrides = override_map
         .get(child.stable_id.as_str())
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
 
-    if !is_visible(child_overrides) {
-        return Ok(()); // Hidden by override
+    if !is_visible(child.visible, child_overrides) {
+        return Ok(()); // Hidden by override or base visibility
     }
 
     // If this child is itself an Instance, resolve it (nested instance)
@@ -550,6 +559,7 @@ fn convert_component_child(
             layout_map,
             stable_id_index,
             resolution_stack,
+            resolution_set,
         );
     }
 
@@ -677,6 +687,7 @@ fn convert_component_child(
                 stable_id_index,
                 override_map,
                 resolution_stack,
+                resolution_set,
             )?;
         }
     }

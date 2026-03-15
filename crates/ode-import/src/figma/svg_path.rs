@@ -601,7 +601,8 @@ fn arc_to_cubics(
     let n_segs = n_segs.max(1);
     let d = dtheta / n_segs as f64;
 
-    let alpha = (d / 2.0).sin() * ((4.0 + 3.0 * (d / 2.0).tan().powi(2)).sqrt() - 1.0) / 3.0;
+    // Use the standard kappa approximation that avoids tan(d/2) overflow
+    let alpha = 4.0 / 3.0 * (d / 4.0).tan();
 
     let mut t = theta1;
     let mut px = x1;
