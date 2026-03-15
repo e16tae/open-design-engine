@@ -30,6 +30,9 @@ fn boxes_for_gauss(sigma: f32, n: usize) -> Vec<f32> {
     if wl as i32 % 2 == 0 {
         wl -= 1.0;
     }
+    if wl < 1.0 {
+        wl = 1.0;
+    }
     let wu = wl + 2.0;
     let m_ideal =
         (12.0 * sigma * sigma - n as f32 * wl * wl - 4.0 * n as f32 * wl - 3.0 * n as f32)

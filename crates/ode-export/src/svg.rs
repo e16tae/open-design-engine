@@ -94,11 +94,20 @@ impl SvgContext {
             } => {
                 let mut attrs = String::new();
 
-                if (*opacity - 1.0).abs() > f32::EPSILON {
-                    let _ = write!(attrs, " opacity=\"{}\"", fmt_f32(*opacity));
-                }
+                let has_opacity = (*opacity - 1.0).abs() > f32::EPSILON;
+                let has_blend = *blend_mode != BlendMode::Normal;
 
-                if *blend_mode != BlendMode::Normal {
+                if has_opacity && has_blend {
+                    // Combine both into a single style attribute for correct SVG rendering
+                    let _ = write!(
+                        attrs,
+                        " style=\"opacity:{};mix-blend-mode:{}\"",
+                        fmt_f32(*opacity),
+                        blend_mode_to_css(blend_mode)
+                    );
+                } else if has_opacity {
+                    let _ = write!(attrs, " opacity=\"{}\"", fmt_f32(*opacity));
+                } else if has_blend {
                     let _ = write!(
                         attrs,
                         " style=\"mix-blend-mode:{}\"",
@@ -695,6 +704,9 @@ fn write_gradient_stop(defs: &mut String, stop: &ResolvedGradientStop) {
 
 /// Format f32 in a compact way: strip trailing zeros.
 fn fmt_f32(v: f32) -> String {
+    if !v.is_finite() {
+        return "0".to_string();
+    }
     if v == v.floor() && v.abs() < 1e9 {
         format!("{}", v as i64)
     } else {
@@ -1088,8 +1100,8 @@ mod tests {
         };
         let svg = SvgExporter::export_string(&scene).unwrap();
         assert!(svg.contains("opacity=\"0.8\""));
-        assert!(svg.contains("opacity=\"0.5\""));
-        assert!(svg.contains("mix-blend-mode:screen"));
+        // opacity=0.5 + blend=screen are combined into a single style attribute
+        assert!(svg.contains("opacity:0.5;mix-blend-mode:screen"));
         // Two </g> closings
         assert_eq!(svg.matches("</g>").count(), 2);
     }

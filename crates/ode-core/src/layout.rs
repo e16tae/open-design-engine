@@ -51,7 +51,8 @@ fn walk_for_layout(
         }
     }
 
-    // If this node is an auto-layout container, compute its subtree
+    // If this node is an auto-layout container, compute its subtree.
+    // If layout computation fails (e.g., taffy error), skip this node gracefully.
     if let Some(config) = get_layout_config(node) {
         compute_subtree_layout(doc, node_id, config, result, stable_id_index);
     }
@@ -108,17 +109,18 @@ fn get_intrinsic_size(
 }
 
 /// Build a taffy tree for a single auto-layout subtree and compute positions.
+/// Returns `None` if any taffy operation fails, allowing the caller to skip gracefully.
 fn compute_subtree_layout(
     doc: &Document,
     container_id: NodeId,
     config: &LayoutConfig,
     result: &mut LayoutMap,
     stable_id_index: &HashMap<&str, NodeId>,
-) {
+) -> Option<()> {
     let container_node = &doc.nodes[container_id];
     let children = match container_node.kind.children() {
         Some(c) => c,
-        None => return,
+        None => return Some(()),
     };
 
     let mut taffy: TaffyTree<()> = TaffyTree::new();
@@ -140,7 +142,7 @@ fn compute_subtree_layout(
             already_laid_out,
         );
 
-        let taffy_child = taffy.new_leaf(child_style).unwrap();
+        let taffy_child = taffy.new_leaf(child_style).ok()?;
         taffy_children.push(taffy_child);
         child_id_map.push(child_id);
     }
@@ -151,16 +153,16 @@ fn compute_subtree_layout(
     // Create container node
     let taffy_root = taffy
         .new_with_children(container_style, &taffy_children)
-        .unwrap();
+        .ok()?;
 
     // Determine available space for the container
     let available_size = get_container_available_size(container_node, container_id, result);
 
     // Compute layout
-    taffy.compute_layout(taffy_root, available_size).unwrap();
+    taffy.compute_layout(taffy_root, available_size).ok()?;
 
     // Extract results: update container size if Hug
-    let root_layout = taffy.layout(taffy_root).unwrap();
+    let root_layout = taffy.layout(taffy_root).ok()?;
     let container_rect = LayoutRect {
         x: 0.0, // Container position is determined by its parent (or its own transform)
         y: 0.0,
@@ -179,7 +181,7 @@ fn compute_subtree_layout(
 
     // Extract child positions
     for (i, &taffy_child) in taffy_children.iter().enumerate() {
-        let child_layout = taffy.layout(taffy_child).unwrap();
+        let child_layout = taffy.layout(taffy_child).ok()?;
         let ode_child_id = child_id_map[i];
 
         // If the child already has a LayoutRect (nested auto-layout container),
@@ -206,6 +208,8 @@ fn compute_subtree_layout(
             );
         }
     }
+
+    Some(())
 }
 
 fn get_frame_data(node: &Node) -> Option<&FrameData> {
