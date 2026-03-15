@@ -11,7 +11,7 @@ use ode_format::node::{
     ImageData, InstanceData, Node, NodeId, NodeKind, NodeTree, PathSegment, SizingMode, StableId,
     TextData, VectorData, VectorPath,
 };
-use ode_format::style::{BlendMode, VisualProps};
+use ode_format::style::{BlendMode, ImageSource, VisualProps};
 use ode_format::tokens::DesignTokens;
 use ode_format::typography::TextSizingMode;
 
@@ -516,8 +516,32 @@ impl<'a> ConvertContext<'a> {
             return None;
         }
 
-        let visual = self.convert_visual_props(fnode);
-        Some(NodeKind::Image(Box::new(ImageData { visual })))
+        let (width, height) = node_size(fnode);
+        let fill = &fills[0];
+
+        // Extract image source from the Figma paint's image_ref.
+        // If we have pre-fetched image data for this ref, embed it;
+        // otherwise, store as a Linked reference.
+        let source = fill.image_ref.as_ref().map(|image_ref| {
+            if let Some(data) = self.images.get(image_ref) {
+                ImageSource::Embedded { data: data.clone() }
+            } else {
+                ImageSource::Linked {
+                    path: image_ref.clone(),
+                }
+            }
+        });
+
+        // Don't include the IMAGE fill in visual props since we have a source.
+        // Keep visual empty so strokes/effects (none in this branch) are clean.
+        let visual = VisualProps::default();
+
+        Some(NodeKind::Image(Box::new(ImageData {
+            visual,
+            source,
+            width,
+            height,
+        })))
     }
 
     // ── Visual Props ─────────────────────────────────────────────────────
@@ -1159,5 +1183,106 @@ mod tests {
         assert_eq!(result.document.nodes.len(), 1); // only Frame
         assert_eq!(result.warnings.len(), 1);
         assert!(result.warnings[0].message.contains("STICKY"));
+    }
+
+    #[test]
+    fn image_promotion_preserves_source_linked() {
+        let paint = FigmaPaint {
+            paint_type: "IMAGE".to_string(),
+            image_ref: Some("img_xyz".to_string()),
+            ..Default::default()
+        };
+        let rect = FigmaNode {
+            id: "2:1".to_string(),
+            name: "Banner".to_string(),
+            node_type: "RECTANGLE".to_string(),
+            size: Some(FigmaVector { x: 300.0, y: 200.0 }),
+            fills: Some(vec![paint]),
+            strokes: Some(vec![]),
+            effects: Some(vec![]),
+            children: None,
+            ..Default::default()
+        };
+        let frame = FigmaNode {
+            id: "1:1".to_string(),
+            name: "Frame".to_string(),
+            node_type: "FRAME".to_string(),
+            size: Some(FigmaVector { x: 400.0, y: 300.0 }),
+            children: Some(vec![rect]),
+            ..Default::default()
+        };
+        let file = make_file("Test", vec![frame]);
+        // No pre-fetched images — should produce Linked source
+        let result = FigmaConverter::convert(file, None, HashMap::new()).unwrap();
+        let frame_id = result.document.canvas[0];
+        let frame_node = &result.document.nodes[frame_id];
+        if let NodeKind::Frame(ref data) = frame_node.kind {
+            let img_id = data.container.children[0];
+            let img_node = &result.document.nodes[img_id];
+            if let NodeKind::Image(ref img_data) = img_node.kind {
+                assert!((img_data.width - 300.0).abs() < f32::EPSILON);
+                assert!((img_data.height - 200.0).abs() < f32::EPSILON);
+                match &img_data.source {
+                    Some(ode_format::style::ImageSource::Linked { path }) => {
+                        assert_eq!(path, "img_xyz");
+                    }
+                    other => panic!("Expected Linked source, got {:?}", other),
+                }
+            } else {
+                panic!("Expected Image node");
+            }
+        } else {
+            panic!("Expected Frame");
+        }
+    }
+
+    #[test]
+    fn image_promotion_with_prefetched_data_produces_embedded() {
+        let paint = FigmaPaint {
+            paint_type: "IMAGE".to_string(),
+            image_ref: Some("img_fetched".to_string()),
+            ..Default::default()
+        };
+        let rect = FigmaNode {
+            id: "2:1".to_string(),
+            name: "Photo".to_string(),
+            node_type: "RECTANGLE".to_string(),
+            size: Some(FigmaVector { x: 100.0, y: 80.0 }),
+            fills: Some(vec![paint]),
+            strokes: Some(vec![]),
+            effects: Some(vec![]),
+            children: None,
+            ..Default::default()
+        };
+        let frame = FigmaNode {
+            id: "1:1".to_string(),
+            name: "Frame".to_string(),
+            node_type: "FRAME".to_string(),
+            size: Some(FigmaVector { x: 400.0, y: 300.0 }),
+            children: Some(vec![rect]),
+            ..Default::default()
+        };
+        let file = make_file("Test", vec![frame]);
+        let mut images = HashMap::new();
+        images.insert("img_fetched".to_string(), vec![0x89, 0x50, 0x4E, 0x47]);
+        let result = FigmaConverter::convert(file, None, images).unwrap();
+        let frame_id = result.document.canvas[0];
+        let frame_node = &result.document.nodes[frame_id];
+        if let NodeKind::Frame(ref data) = frame_node.kind {
+            let img_id = data.container.children[0];
+            let img_node = &result.document.nodes[img_id];
+            if let NodeKind::Image(ref img_data) = img_node.kind {
+                match &img_data.source {
+                    Some(ode_format::style::ImageSource::Embedded { data }) => {
+                        assert_eq!(data, &[0x89, 0x50, 0x4E, 0x47]);
+                    }
+                    other => panic!("Expected Embedded source, got {:?}", other),
+                }
+            } else {
+                panic!("Expected Image node");
+            }
+        } else {
+            panic!("Expected Frame");
+        }
     }
 }
