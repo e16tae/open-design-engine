@@ -205,7 +205,7 @@ fn figma_type_style_to_run_style(fts: &FigmaTypeStyle) -> TextRunStyle {
     let fills = fts.fills.as_ref().map(|paints| {
         paints
             .iter()
-            .filter_map(|p| convert_fill(p, &mut warnings))
+            .filter_map(|p| convert_fill(p, &std::collections::HashMap::new(), &mut warnings))
             .collect()
     });
 

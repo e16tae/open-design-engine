@@ -55,12 +55,12 @@ impl FigmaConverter {
         ctx.pre_pass(&file.document);
 
         // ── Variables pass ───────────────────────────────────────────────
-        let tokens = if let Some(ref vars) = variables {
-            let (design_tokens, _variable_map) = convert_all_variables(&vars.meta);
-            design_tokens
+        let (tokens, variable_map) = if let Some(ref vars) = variables {
+            convert_all_variables(&vars.meta)
         } else {
-            DesignTokens::new()
+            (DesignTokens::new(), HashMap::new())
         };
+        ctx.variable_map = variable_map;
 
         // ── Main DFS pass ───────────────────────────────────────────────
         let mut nodes = NodeTree::new();
@@ -111,6 +111,8 @@ struct ConvertContext<'a> {
     /// Pre-fetched rasterized image data (unused in this pass but reserved).
     #[allow(dead_code)]
     images: HashMap<String, Vec<u8>>,
+    /// Figma variable ID → ODE (CollectionId, TokenId) for boundVariables resolution.
+    variable_map: super::convert_style::VariableMap,
     /// Accumulated warnings.
     warnings: Vec<ImportWarning>,
 }
@@ -122,6 +124,7 @@ impl<'a> ConvertContext<'a> {
             component_map: HashMap::new(),
             components_meta: &file.components,
             images,
+            variable_map: HashMap::new(),
             warnings: Vec::new(),
         }
     }
@@ -547,10 +550,11 @@ impl<'a> ConvertContext<'a> {
     // ── Visual Props ─────────────────────────────────────────────────────
 
     fn convert_visual_props(&mut self, fnode: &FigmaNode) -> VisualProps {
+        let var_map = &self.variable_map;
         let fills = fnode.fills.as_ref().map_or(Vec::new(), |fills| {
             fills
                 .iter()
-                .filter_map(|f| convert_fill(f, &mut self.warnings))
+                .filter_map(|f| convert_fill(f, var_map, &mut self.warnings))
                 .collect()
         });
         let strokes = fnode.strokes.as_ref().map_or(Vec::new(), |strokes| {
@@ -565,6 +569,7 @@ impl<'a> ConvertContext<'a> {
                         fnode.stroke_join.as_deref(),
                         fnode.stroke_miter_angle,
                         fnode.stroke_dashes.as_deref(),
+                        var_map,
                         &mut self.warnings,
                     )
                 })
@@ -573,7 +578,7 @@ impl<'a> ConvertContext<'a> {
         let effects = fnode.effects.as_ref().map_or(Vec::new(), |effects| {
             effects
                 .iter()
-                .filter_map(|e| convert_effect(e, &mut self.warnings))
+                .filter_map(|e| convert_effect(e, var_map, &mut self.warnings))
                 .collect()
         });
 
