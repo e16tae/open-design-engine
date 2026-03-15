@@ -9,7 +9,7 @@ use crate::node::{
     InstanceData, LayoutConfig, LayoutSizing, Node, NodeId, NodeKind, NodeTree, Override,
     SizingMode, StableId, TextData, Transform, VectorData,
 };
-use crate::style::{BlendMode, VisualProps};
+use crate::style::{BlendMode, ImageSource, VisualProps};
 use crate::tokens::DesignTokens;
 use crate::typography::{TextRun, TextSizingMode, TextStyle};
 
@@ -151,6 +151,12 @@ pub struct TextDataWire {
 pub struct ImageDataWire {
     #[serde(default)]
     pub visual: VisualProps,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<ImageSource>,
+    #[serde(default)]
+    pub width: f32,
+    #[serde(default)]
+    pub height: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -330,6 +336,9 @@ fn node_to_wire(node: &Node, resolve: &dyn Fn(&NodeId) -> String) -> NodeWire {
         }),
         NodeKind::Image(d) => NodeKindWire::Image(ImageDataWire {
             visual: d.visual.clone(),
+            source: d.source.clone(),
+            width: d.width,
+            height: d.height,
         }),
         NodeKind::Instance(d) => NodeKindWire::Instance(InstanceDataWire {
             container: ContainerPropsWire {
@@ -415,6 +424,9 @@ fn wire_kind_to_runtime(
         })),
         NodeKindWire::Image(d) => NodeKind::Image(Box::new(ImageData {
             visual: d.visual.clone(),
+            source: d.source.clone(),
+            width: d.width,
+            height: d.height,
         })),
         NodeKindWire::Instance(d) => {
             let children = d

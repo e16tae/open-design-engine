@@ -15,3 +15,6 @@ taffy = { workspace = true }
 image = { workspace = true }
 thiserror = { workspace = true }
 i_overlay = { workspace = true }
+
+[dev-dependencies]
+base64 = { workspace = true }

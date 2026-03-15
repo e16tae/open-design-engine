@@ -149,6 +149,35 @@ impl Renderer {
                         }
                     }
                 }
+                RenderCommand::DrawImage {
+                    data,
+                    width,
+                    height,
+                    transform,
+                } => {
+                    let current = stack.last_mut().unwrap();
+                    if let Ok(dyn_img) = image::load_from_memory(data) {
+                        let rgba = dyn_img.to_rgba8();
+                        let (img_w, img_h) = (rgba.width(), rgba.height());
+                        if let Some(src_pixmap) =
+                            tiny_skia::PixmapRef::from_bytes(rgba.as_raw(), img_w, img_h)
+                        {
+                            // Scale from decoded size to display size
+                            let sx = width / img_w as f32;
+                            let sy = height / img_h as f32;
+                            let scale = tiny_skia::Transform::from_scale(sx, sy);
+                            let combined = transform.post_concat(scale);
+                            let img_paint = tiny_skia::PixmapPaint {
+                                opacity: 1.0,
+                                blend_mode: tiny_skia::BlendMode::SourceOver,
+                                quality: tiny_skia::FilterQuality::Bilinear,
+                            };
+                            current
+                                .pixmap
+                                .draw_pixmap(0, 0, src_pixmap, &img_paint, combined, None);
+                        }
+                    }
+                }
                 RenderCommand::ApplyEffect { effect } => match effect {
                     ResolvedEffect::DropShadow {
                         color,

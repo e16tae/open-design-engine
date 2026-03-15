@@ -159,6 +159,29 @@ impl SvgContext {
             } => {
                 self.write_stroke(path, paint, stroke, transform)?;
             }
+            RenderCommand::DrawImage {
+                data,
+                width,
+                height,
+                transform,
+            } => {
+                // Detect image format from magic bytes
+                let mime = if data.starts_with(b"\x89PNG") {
+                    "image/png"
+                } else {
+                    "image/jpeg"
+                };
+                let b64 = BASE64.encode(data);
+                let t = transform_to_svg_attr(transform);
+                let _ = write!(
+                    self.body,
+                    "\n<image x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" href=\"data:{};base64,{}\"{t}/>",
+                    fmt_f32(*width),
+                    fmt_f32(*height),
+                    mime,
+                    b64
+                );
+            }
             RenderCommand::ApplyEffect { effect } => {
                 let filter_id = self.write_filter_def(effect);
                 // Apply filter to the current layer's <g> tag

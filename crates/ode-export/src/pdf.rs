@@ -150,6 +150,24 @@ fn process_command(
         } => {
             draw_stroke(surface, path, paint, stroke, transform, scene_w, scene_h)?;
         }
+        RenderCommand::DrawImage {
+            data,
+            width,
+            height,
+            transform,
+        } => {
+            // Decode image bytes and draw onto the PDF surface
+            if let Ok(dyn_img) = image::load_from_memory(data) {
+                let rgba = dyn_img.to_rgba8();
+                let (img_w, img_h) = (rgba.width(), rgba.height());
+                let image = Image::from_rgba8(rgba.into_raw(), img_w, img_h);
+                if let Some(size) = KrillaSize::from_wh(*width, *height) {
+                    surface.push_transform(&transform_to_krilla(transform));
+                    surface.draw_image(image, size);
+                    surface.pop(); // transform
+                }
+            }
+        }
         RenderCommand::ApplyEffect { .. } => {
             // PDF has no native filter effects (shadows, blurs).
             // Silently skip, matching SVG exporter's approach for unsupported features.
