@@ -3,9 +3,11 @@ use std::collections::HashMap;
 use crate::error::ConvertError;
 use crate::path;
 use crate::scene::*;
+use ode_format::color::Color;
 use ode_format::document::Document;
 use ode_format::node::{FillRule as OdeFillRule, Node, NodeId, NodeKind, Override};
-use ode_format::style::{BlendMode, Effect, Paint, VisualProps};
+use ode_format::style::{BlendMode, Effect, Paint, StyleValue, VisualProps};
+use ode_format::tokens::{DesignTokens, TokenValue};
 use ode_text::FontDatabase;
 
 /// Maximum nesting depth for instance resolution to prevent stack overflow.
@@ -125,7 +127,14 @@ fn convert_node(
     if let Some(visual) = node.kind.visual() {
         // Text nodes use glyph-based rendering instead of a single path
         if let NodeKind::Text(ref text_data) = node.kind {
-            convert_text_node(text_data, visual, current_transform, commands, font_db)?;
+            convert_text_node(
+                text_data,
+                visual,
+                current_transform,
+                commands,
+                font_db,
+                &doc.tokens,
+            )?;
         } else if let NodeKind::Image(ref img_data) = node.kind {
             // Image nodes: emit DrawImage first, then visual overlays (strokes/effects)
             emit_image(img_data, current_transform, commands);
@@ -136,6 +145,7 @@ fn convert_node(
                 get_fill_rule(node),
                 current_transform,
                 commands,
+                &doc.tokens,
             );
         } else {
             let node_path = get_node_path(doc, node, layout_rect);
@@ -145,6 +155,7 @@ fn convert_node(
                 get_fill_rule(node),
                 current_transform,
                 commands,
+                &doc.tokens,
             );
         }
     }
@@ -178,6 +189,7 @@ fn emit_visual(
     fill_rule: OdeFillRule,
     current_transform: tiny_skia::Transform,
     commands: &mut Vec<RenderCommand>,
+    tokens: &DesignTokens,
 ) {
     // Effects that render BEHIND content (DropShadow)
     if let Some(bp) = node_path {
@@ -191,11 +203,11 @@ fn emit_visual(
             {
                 commands.push(RenderCommand::ApplyEffect {
                     effect: ResolvedEffect::DropShadow {
-                        color: color.value(),
+                        color: resolve_color(color, tokens),
                         offset_x: offset.x,
                         offset_y: offset.y,
-                        blur_radius: blur.value(),
-                        spread: spread.value(),
+                        blur_radius: resolve_f32(blur, tokens),
+                        spread: resolve_f32(spread, tokens),
                         shape: bp.clone(),
                     },
                 });
@@ -209,7 +221,7 @@ fn emit_visual(
             if !fill.visible {
                 continue;
             }
-            if let Some(resolved) = resolve_paint(&fill.paint) {
+            if let Some(resolved) = resolve_paint(&fill.paint, tokens) {
                 commands.push(RenderCommand::FillPath {
                     path: bp.clone(),
                     paint: resolved,
@@ -224,12 +236,12 @@ fn emit_visual(
             if !stroke.visible {
                 continue;
             }
-            if let Some(resolved) = resolve_paint(&stroke.paint) {
+            if let Some(resolved) = resolve_paint(&stroke.paint, tokens) {
                 commands.push(RenderCommand::StrokePath {
                     path: bp.clone(),
                     paint: resolved,
                     stroke: StrokeStyle {
-                        width: stroke.width.value(),
+                        width: resolve_f32(&stroke.width, tokens),
                         position: stroke.position,
                         cap: stroke.cap,
                         join: stroke.join,
@@ -254,11 +266,11 @@ fn emit_visual(
                 if let Some(bp) = node_path {
                     commands.push(RenderCommand::ApplyEffect {
                         effect: ResolvedEffect::InnerShadow {
-                            color: color.value(),
+                            color: resolve_color(color, tokens),
                             offset_x: offset.x,
                             offset_y: offset.y,
-                            blur_radius: blur.value(),
-                            spread: spread.value(),
+                            blur_radius: resolve_f32(blur, tokens),
+                            spread: resolve_f32(spread, tokens),
                             shape: bp.clone(),
                         },
                     });
@@ -267,14 +279,14 @@ fn emit_visual(
             Effect::LayerBlur { radius } => {
                 commands.push(RenderCommand::ApplyEffect {
                     effect: ResolvedEffect::LayerBlur {
-                        radius: radius.value(),
+                        radius: resolve_f32(radius, tokens),
                     },
                 });
             }
             Effect::BackgroundBlur { radius } => {
                 commands.push(RenderCommand::ApplyEffect {
                     effect: ResolvedEffect::BackgroundBlur {
-                        radius: radius.value(),
+                        radius: resolve_f32(radius, tokens),
                     },
                 });
             }
@@ -474,6 +486,7 @@ fn resolve_instance(
         OdeFillRule::NonZero,
         current_transform,
         commands,
+        &doc.tokens,
     );
 
     // Recurse into component's children
@@ -611,9 +624,17 @@ fn convert_component_child(
                     current_transform,
                     commands,
                     font_db,
+                    &doc.tokens,
                 )?;
             } else {
-                convert_text_node(text_data, &visual, current_transform, commands, font_db)?;
+                convert_text_node(
+                    text_data,
+                    &visual,
+                    current_transform,
+                    commands,
+                    font_db,
+                    &doc.tokens,
+                )?;
             }
         } else {
             // Use size override for node path if present
@@ -638,6 +659,7 @@ fn convert_component_child(
                 get_fill_rule(child),
                 current_transform,
                 commands,
+                &doc.tokens,
             );
         }
     }
@@ -670,6 +692,7 @@ fn convert_text_node(
     current_transform: tiny_skia::Transform,
     commands: &mut Vec<RenderCommand>,
     font_db: &FontDatabase,
+    tokens: &DesignTokens,
 ) -> Result<(), ConvertError> {
     // Skip if font database is empty (no fonts available)
     if font_db.is_empty() {
@@ -687,7 +710,7 @@ fn convert_text_node(
 
     // Determine the fill paint for glyphs
     let paint = if let Some(fill) = visual.fills.iter().find(|f| f.visible) {
-        resolve_paint(&fill.paint)
+        resolve_paint(&fill.paint, tokens)
     } else {
         // Default to black if no fills specified
         Some(ResolvedPaint::Solid(ode_format::color::Color::black()))
@@ -707,11 +730,11 @@ fn convert_text_node(
         {
             commands.push(RenderCommand::ApplyEffect {
                 effect: ResolvedEffect::DropShadow {
-                    color: color.value(),
+                    color: resolve_color(color, tokens),
                     offset_x: offset.x,
                     offset_y: offset.y,
-                    blur_radius: blur.value(),
-                    spread: spread.value(),
+                    blur_radius: resolve_f32(blur, tokens),
+                    spread: resolve_f32(spread, tokens),
                     shape: bbox.clone(),
                 },
             });
@@ -749,11 +772,11 @@ fn convert_text_node(
             } => {
                 commands.push(RenderCommand::ApplyEffect {
                     effect: ResolvedEffect::InnerShadow {
-                        color: color.value(),
+                        color: resolve_color(color, tokens),
                         offset_x: offset.x,
                         offset_y: offset.y,
-                        blur_radius: blur.value(),
-                        spread: spread.value(),
+                        blur_radius: resolve_f32(blur, tokens),
+                        spread: resolve_f32(spread, tokens),
                         shape: bbox.clone(),
                     },
                 });
@@ -761,14 +784,14 @@ fn convert_text_node(
             Effect::LayerBlur { radius } => {
                 commands.push(RenderCommand::ApplyEffect {
                     effect: ResolvedEffect::LayerBlur {
-                        radius: radius.value(),
+                        radius: resolve_f32(radius, tokens),
                     },
                 });
             }
             Effect::BackgroundBlur { radius } => {
                 commands.push(RenderCommand::ApplyEffect {
                     effect: ResolvedEffect::BackgroundBlur {
-                        radius: radius.value(),
+                        radius: resolve_f32(radius, tokens),
                     },
                 });
             }
@@ -877,16 +900,50 @@ fn get_fill_rule(node: &Node) -> ode_format::node::FillRule {
     }
 }
 
+/// Resolve a `StyleValue<Color>` using active token modes.
+///
+/// For `Bound` values, attempts live resolution from `DesignTokens`.
+/// Falls back to the cached `resolved` value if the token is missing or
+/// has the wrong type.
+fn resolve_color(sv: &StyleValue<Color>, tokens: &DesignTokens) -> Color {
+    match sv {
+        StyleValue::Bound { token, resolved } => tokens
+            .resolve(token.collection_id, token.token_id)
+            .ok()
+            .and_then(|tv| match tv {
+                TokenValue::Color(c) => Some(c),
+                _ => None,
+            })
+            .unwrap_or_else(|| resolved.clone()),
+        StyleValue::Raw(v) => v.clone(),
+    }
+}
+
+/// Resolve a `StyleValue<f32>` using active token modes.
+fn resolve_f32(sv: &StyleValue<f32>, tokens: &DesignTokens) -> f32 {
+    match sv {
+        StyleValue::Bound { token, resolved } => tokens
+            .resolve(token.collection_id, token.token_id)
+            .ok()
+            .and_then(|tv| match tv {
+                TokenValue::Number(n) => Some(n),
+                _ => None,
+            })
+            .unwrap_or(*resolved),
+        StyleValue::Raw(v) => *v,
+    }
+}
+
 /// Resolve a format-level Paint to a render-level ResolvedPaint.
-fn resolve_paint(paint: &Paint) -> Option<ResolvedPaint> {
+fn resolve_paint(paint: &Paint, tokens: &DesignTokens) -> Option<ResolvedPaint> {
     match paint {
-        Paint::Solid { color } => Some(ResolvedPaint::Solid(color.value())),
+        Paint::Solid { color } => Some(ResolvedPaint::Solid(resolve_color(color, tokens))),
         Paint::LinearGradient { stops, start, end } => Some(ResolvedPaint::LinearGradient {
             stops: stops
                 .iter()
                 .map(|s| ResolvedGradientStop {
                     position: s.position,
-                    color: s.color.value(),
+                    color: resolve_color(&s.color, tokens),
                 })
                 .collect(),
             start: kurbo::Point::new(start.x as f64, start.y as f64),
@@ -901,7 +958,7 @@ fn resolve_paint(paint: &Paint) -> Option<ResolvedPaint> {
                 .iter()
                 .map(|s| ResolvedGradientStop {
                     position: s.position,
-                    color: s.color.value(),
+                    color: resolve_color(&s.color, tokens),
                 })
                 .collect(),
             center: kurbo::Point::new(center.x as f64, center.y as f64),
@@ -916,7 +973,7 @@ fn resolve_paint(paint: &Paint) -> Option<ResolvedPaint> {
                 .iter()
                 .map(|s| ResolvedGradientStop {
                     position: s.position,
-                    color: s.color.value(),
+                    color: resolve_color(&s.color, tokens),
                 })
                 .collect(),
             center: kurbo::Point::new(center.x as f64, center.y as f64),
@@ -931,7 +988,7 @@ fn resolve_paint(paint: &Paint) -> Option<ResolvedPaint> {
                 .iter()
                 .map(|s| ResolvedGradientStop {
                     position: s.position,
-                    color: s.color.value(),
+                    color: resolve_color(&s.color, tokens),
                 })
                 .collect(),
             center: kurbo::Point::new(center.x as f64, center.y as f64),
@@ -1875,5 +1932,168 @@ mod tests {
             "Expected 0 DrawImage commands, got {}",
             draw_image_count
         );
+    }
+
+    // ─── Token Mode-Aware Rendering Tests ───
+
+    #[test]
+    fn token_mode_affects_resolved_color() {
+        use ode_format::style::TokenRef;
+        use ode_format::tokens::{DesignTokens, TokenValue};
+
+        let mut doc = Document::new("Token Mode Test");
+
+        // Create a token collection with Light and Dark modes
+        let mut tokens = DesignTokens::new();
+        let col_id = tokens.add_collection("Theme", vec!["Light", "Dark"]);
+        let light_mode = tokens.collections[0].modes[0].id;
+        let dark_mode = tokens.collections[0].modes[1].id;
+
+        let red = Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let blue = Color::Srgb {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 1.0,
+        };
+
+        // Add token with red in Light mode (via add_token), then override Dark mode
+        let tok_id = tokens.add_token(col_id, "primary", TokenValue::Color(red.clone()));
+
+        // Set Dark mode value to blue
+        if let Some(coll) = tokens.collections.iter_mut().find(|c| c.id == col_id) {
+            if let Some(tok) = coll.tokens.iter_mut().find(|t| t.id == tok_id) {
+                tok.values.insert(
+                    dark_mode,
+                    ode_format::tokens::TokenResolve::Direct(TokenValue::Color(blue.clone())),
+                );
+            }
+        }
+
+        // Set Light mode as active
+        tokens.set_active_mode(col_id, light_mode);
+
+        // Create a frame with a fill bound to the token
+        let mut frame = Node::new_frame("Root", 100.0, 80.0);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.visual.fills.push(Fill {
+                paint: Paint::Solid {
+                    color: StyleValue::Bound {
+                        token: TokenRef {
+                            collection_id: col_id,
+                            token_id: tok_id,
+                        },
+                        resolved: red.clone(),
+                    },
+                },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: BlendMode::Normal,
+                visible: true,
+            });
+        }
+        let frame_id = doc.nodes.insert(frame);
+        doc.canvas.push(frame_id);
+        doc.tokens = tokens;
+
+        // Render with Light mode active → should produce red
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let fill_colors: Vec<_> = scene
+            .commands
+            .iter()
+            .filter_map(|c| match c {
+                RenderCommand::FillPath {
+                    paint: ResolvedPaint::Solid(c),
+                    ..
+                } => Some(c.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fill_colors.len(), 1);
+        assert_eq!(fill_colors[0], red);
+
+        // Switch to Dark mode and render again → should produce blue
+        doc.tokens.set_active_mode(col_id, dark_mode);
+        let scene2 = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let fill_colors2: Vec<_> = scene2
+            .commands
+            .iter()
+            .filter_map(|c| match c {
+                RenderCommand::FillPath {
+                    paint: ResolvedPaint::Solid(c),
+                    ..
+                } => Some(c.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fill_colors2.len(), 1);
+        assert_eq!(fill_colors2[0], blue);
+    }
+
+    #[test]
+    fn unbound_values_still_work() {
+        // Ensure that documents without any tokens continue to work correctly
+        let doc = make_simple_doc();
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let fill_count = scene
+            .commands
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::FillPath { .. }))
+            .count();
+        assert!(fill_count >= 1, "Raw values should still render");
+    }
+
+    #[test]
+    fn bound_token_missing_falls_back_to_cached() {
+        use ode_format::style::TokenRef;
+
+        let mut doc = Document::new("Fallback Test");
+        let green = Color::Srgb {
+            r: 0.0,
+            g: 1.0,
+            b: 0.0,
+            a: 1.0,
+        };
+
+        // Create a frame with a fill bound to a non-existent token
+        let mut frame = Node::new_frame("Root", 100.0, 80.0);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.visual.fills.push(Fill {
+                paint: Paint::Solid {
+                    color: StyleValue::Bound {
+                        token: TokenRef {
+                            collection_id: 999,
+                            token_id: 999,
+                        },
+                        resolved: green.clone(),
+                    },
+                },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: BlendMode::Normal,
+                visible: true,
+            });
+        }
+        let frame_id = doc.nodes.insert(frame);
+        doc.canvas.push(frame_id);
+
+        // Should fall back to the cached resolved value (green)
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let fill_colors: Vec<_> = scene
+            .commands
+            .iter()
+            .filter_map(|c| match c {
+                RenderCommand::FillPath {
+                    paint: ResolvedPaint::Solid(c),
+                    ..
+                } => Some(c.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fill_colors.len(), 1);
+        assert_eq!(fill_colors[0], green);
     }
 }

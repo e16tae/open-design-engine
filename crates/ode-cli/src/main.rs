@@ -75,6 +75,11 @@ enum Command {
         #[command(subcommand)]
         source: ImportSource,
     },
+    /// Manage design tokens
+    Tokens {
+        #[command(subcommand)]
+        action: TokenAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -99,6 +104,40 @@ enum ImportSource {
         /// Skip downloading images
         #[arg(long)]
         skip_images: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum TokenAction {
+    /// List all token collections and tokens
+    List {
+        /// Input .ode.json file
+        file: String,
+    },
+    /// Resolve a token value in the current active mode
+    Resolve {
+        /// Input .ode.json file
+        file: String,
+        /// Collection name or ID
+        #[arg(long)]
+        collection: String,
+        /// Token name or ID
+        #[arg(long)]
+        token: String,
+    },
+    /// Set active mode for a collection
+    SetMode {
+        /// Input .ode.json file
+        file: String,
+        /// Collection name or ID
+        #[arg(long)]
+        collection: String,
+        /// Mode name or ID
+        #[arg(long)]
+        mode: String,
+        /// Output file (defaults to overwriting input)
+        #[arg(short, long)]
+        output: Option<String>,
     },
 }
 
@@ -141,6 +180,20 @@ fn main() {
                 with_variables,
                 skip_images,
             ),
+        },
+        Command::Tokens { action } => match action {
+            TokenAction::List { file } => commands::cmd_tokens_list(&file),
+            TokenAction::Resolve {
+                file,
+                collection,
+                token,
+            } => commands::cmd_tokens_resolve(&file, &collection, &token),
+            TokenAction::SetMode {
+                file,
+                collection,
+                mode,
+                output,
+            } => commands::cmd_tokens_set_mode(&file, &collection, &mode, output.as_deref()),
         },
     };
 

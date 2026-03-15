@@ -2,14 +2,19 @@
 //!
 //! Converts Figma REST API style types into ODE format equivalents.
 
+use std::collections::HashMap;
+
 use ode_format::color::Color;
 use ode_format::style::{
-    BlendMode, DashPattern, Effect, Fill, GradientStop, ImageFillMode, ImageSource, Paint, Point,
-    Stroke, StrokeCap, StrokeJoin, StrokePosition, StyleValue,
+    BlendMode, CollectionId, DashPattern, Effect, Fill, GradientStop, ImageFillMode, ImageSource,
+    Paint, Point, Stroke, StrokeCap, StrokeJoin, StrokePosition, StyleValue, TokenId, TokenRef,
 };
 
 use super::types::{FigmaColor, FigmaColorStop, FigmaEffect, FigmaPaint, FigmaVector};
 use crate::error::ImportWarning;
+
+/// Map from Figma variable ID to ODE (CollectionId, TokenId).
+pub type VariableMap = HashMap<String, (CollectionId, TokenId)>;
 
 // ─── Color ──────────────────────────────────────────────────────────────────
 
@@ -66,14 +71,73 @@ pub fn convert_blend_mode(s: &str, warnings: &mut Vec<ImportWarning>) -> BlendMo
     }
 }
 
+// ─── Bound Variable Helpers ─────────────────────────────────────────────────
+
+/// Try to create a `StyleValue::Bound` for a color property.
+///
+/// Looks up `property_key` (e.g. "color") in the paint/effect's `bound_variables`.
+/// If found and mappable through `variable_map`, returns `StyleValue::Bound`;
+/// otherwise returns `StyleValue::Raw`.
+fn bind_color(
+    raw: Color,
+    property_key: &str,
+    bound_variables: Option<&HashMap<String, super::types::FigmaVariableAlias>>,
+    variable_map: &VariableMap,
+) -> StyleValue<Color> {
+    if let Some(bv) = bound_variables {
+        if let Some(alias) = bv.get(property_key) {
+            if let Some(&(coll_id, tok_id)) = variable_map.get(&alias.id) {
+                return StyleValue::Bound {
+                    token: TokenRef {
+                        collection_id: coll_id,
+                        token_id: tok_id,
+                    },
+                    resolved: raw,
+                };
+            }
+        }
+    }
+    StyleValue::Raw(raw)
+}
+
+/// Try to create a `StyleValue::Bound` for an f32 property.
+fn bind_f32(
+    raw: f32,
+    property_key: &str,
+    bound_variables: Option<&HashMap<String, super::types::FigmaVariableAlias>>,
+    variable_map: &VariableMap,
+) -> StyleValue<f32> {
+    if let Some(bv) = bound_variables {
+        if let Some(alias) = bv.get(property_key) {
+            if let Some(&(coll_id, tok_id)) = variable_map.get(&alias.id) {
+                return StyleValue::Bound {
+                    token: TokenRef {
+                        collection_id: coll_id,
+                        token_id: tok_id,
+                    },
+                    resolved: raw,
+                };
+            }
+        }
+    }
+    StyleValue::Raw(raw)
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-fn convert_gradient_stops(stops: &[FigmaColorStop]) -> Vec<GradientStop> {
+fn convert_gradient_stops(
+    stops: &[FigmaColorStop],
+    variable_map: &VariableMap,
+) -> Vec<GradientStop> {
     stops
         .iter()
-        .map(|s| GradientStop {
-            position: s.position,
-            color: StyleValue::Raw(convert_color(&s.color)),
+        .map(|s| {
+            let raw = convert_color(&s.color);
+            let color = bind_color(raw, "color", s.bound_variables.as_ref(), variable_map);
+            GradientStop {
+                position: s.position,
+                color,
+            }
         })
         .collect()
 }
@@ -91,15 +155,25 @@ fn figma_vec_to_point(v: &FigmaVector) -> Point {
 ///
 /// Returns `None` for invisible paints or unsupported paint types (VIDEO,
 /// PATTERN, EMOJI) — the latter also emits a warning.
-pub fn convert_fill(paint: &FigmaPaint, warnings: &mut Vec<ImportWarning>) -> Option<Fill> {
+pub fn convert_fill(
+    paint: &FigmaPaint,
+    variable_map: &VariableMap,
+    warnings: &mut Vec<ImportWarning>,
+) -> Option<Fill> {
     // Skip invisible paints.
     if paint.visible == Some(false) {
         return None;
     }
 
-    let ode_paint = convert_paint(paint, warnings)?;
+    let ode_paint = convert_paint(paint, variable_map, warnings)?;
 
-    let opacity = StyleValue::Raw(paint.opacity.unwrap_or(1.0));
+    let raw_opacity = paint.opacity.unwrap_or(1.0);
+    let opacity = bind_f32(
+        raw_opacity,
+        "opacity",
+        paint.bound_variables.as_ref(),
+        variable_map,
+    );
     let blend_mode = paint
         .blend_mode
         .as_deref()
@@ -115,13 +189,17 @@ pub fn convert_fill(paint: &FigmaPaint, warnings: &mut Vec<ImportWarning>) -> Op
 }
 
 /// Inner paint conversion shared by fills and strokes.
-fn convert_paint(paint: &FigmaPaint, warnings: &mut Vec<ImportWarning>) -> Option<Paint> {
+fn convert_paint(
+    paint: &FigmaPaint,
+    variable_map: &VariableMap,
+    warnings: &mut Vec<ImportWarning>,
+) -> Option<Paint> {
     match paint.paint_type.as_str() {
         "SOLID" => {
-            let color = paint.color.as_ref()?;
-            Some(Paint::Solid {
-                color: StyleValue::Raw(convert_color(color)),
-            })
+            let fc = paint.color.as_ref()?;
+            let raw = convert_color(fc);
+            let color = bind_color(raw, "color", paint.bound_variables.as_ref(), variable_map);
+            Some(Paint::Solid { color })
         }
         "GRADIENT_LINEAR" => {
             let stops = paint.gradient_stops.as_deref().unwrap_or_default();
@@ -138,7 +216,7 @@ fn convert_paint(paint: &FigmaPaint, warnings: &mut Vec<ImportWarning>) -> Optio
                 .map(figma_vec_to_point)
                 .unwrap_or(Point { x: 1.0, y: 0.5 });
             Some(Paint::LinearGradient {
-                stops: convert_gradient_stops(stops),
+                stops: convert_gradient_stops(stops, variable_map),
                 start,
                 end,
             })
@@ -166,7 +244,7 @@ fn convert_paint(paint: &FigmaPaint, warnings: &mut Vec<ImportWarning>) -> Optio
                 y: ((h2.x - center.x).powi(2) + (h2.y - center.y).powi(2)).sqrt(),
             };
             Some(Paint::RadialGradient {
-                stops: convert_gradient_stops(stops),
+                stops: convert_gradient_stops(stops, variable_map),
                 center,
                 radius,
             })
@@ -187,7 +265,7 @@ fn convert_paint(paint: &FigmaPaint, warnings: &mut Vec<ImportWarning>) -> Optio
                 .unwrap_or(Point { x: 1.0, y: 0.5 });
             let angle = (h1.y - center.y).atan2(h1.x - center.x).to_degrees();
             Some(Paint::AngularGradient {
-                stops: convert_gradient_stops(stops),
+                stops: convert_gradient_stops(stops, variable_map),
                 center,
                 angle,
             })
@@ -215,7 +293,7 @@ fn convert_paint(paint: &FigmaPaint, warnings: &mut Vec<ImportWarning>) -> Optio
                 y: ((h2.x - center.x).powi(2) + (h2.y - center.y).powi(2)).sqrt(),
             };
             Some(Paint::DiamondGradient {
-                stops: convert_gradient_stops(stops),
+                stops: convert_gradient_stops(stops, variable_map),
                 center,
                 radius,
             })
@@ -266,13 +344,14 @@ pub fn convert_stroke(
     join: Option<&str>,
     miter_angle: Option<f32>,
     dashes: Option<&[f32]>,
+    variable_map: &VariableMap,
     warnings: &mut Vec<ImportWarning>,
 ) -> Option<Stroke> {
     if paint.visible == Some(false) {
         return None;
     }
 
-    let ode_paint = convert_paint(paint, warnings)?;
+    let ode_paint = convert_paint(paint, variable_map, warnings)?;
 
     let position = match align {
         Some("INSIDE") => StrokePosition::Inside,
@@ -318,7 +397,13 @@ pub fn convert_stroke(
         }
     });
 
-    let opacity = StyleValue::Raw(paint.opacity.unwrap_or(1.0));
+    let raw_opacity = paint.opacity.unwrap_or(1.0);
+    let opacity = bind_f32(
+        raw_opacity,
+        "opacity",
+        paint.bound_variables.as_ref(),
+        variable_map,
+    );
     let blend_mode = paint
         .blend_mode
         .as_deref()
@@ -344,14 +429,20 @@ pub fn convert_stroke(
 /// Convert a Figma effect into an ODE `Effect`.
 ///
 /// Returns `None` for invisible effects or unsupported effect types.
-pub fn convert_effect(effect: &FigmaEffect, warnings: &mut Vec<ImportWarning>) -> Option<Effect> {
+pub fn convert_effect(
+    effect: &FigmaEffect,
+    variable_map: &VariableMap,
+    warnings: &mut Vec<ImportWarning>,
+) -> Option<Effect> {
     if effect.visible == Some(false) {
         return None;
     }
 
+    let bv = effect.bound_variables.as_ref();
+
     match effect.effect_type.as_str() {
         "DROP_SHADOW" => {
-            let color = effect
+            let raw_color = effect
                 .color
                 .as_ref()
                 .map(convert_color)
@@ -361,17 +452,17 @@ pub fn convert_effect(effect: &FigmaEffect, warnings: &mut Vec<ImportWarning>) -
                 .as_ref()
                 .map(figma_vec_to_point)
                 .unwrap_or(Point { x: 0.0, y: 0.0 });
-            let blur = effect.radius.unwrap_or(0.0);
-            let spread = effect.spread.unwrap_or(0.0);
+            let raw_blur = effect.radius.unwrap_or(0.0);
+            let raw_spread = effect.spread.unwrap_or(0.0);
             Some(Effect::DropShadow {
-                color: StyleValue::Raw(color),
+                color: bind_color(raw_color, "color", bv, variable_map),
                 offset,
-                blur: StyleValue::Raw(blur),
-                spread: StyleValue::Raw(spread),
+                blur: bind_f32(raw_blur, "radius", bv, variable_map),
+                spread: bind_f32(raw_spread, "spread", bv, variable_map),
             })
         }
         "INNER_SHADOW" => {
-            let color = effect
+            let raw_color = effect
                 .color
                 .as_ref()
                 .map(convert_color)
@@ -381,25 +472,25 @@ pub fn convert_effect(effect: &FigmaEffect, warnings: &mut Vec<ImportWarning>) -
                 .as_ref()
                 .map(figma_vec_to_point)
                 .unwrap_or(Point { x: 0.0, y: 0.0 });
-            let blur = effect.radius.unwrap_or(0.0);
-            let spread = effect.spread.unwrap_or(0.0);
+            let raw_blur = effect.radius.unwrap_or(0.0);
+            let raw_spread = effect.spread.unwrap_or(0.0);
             Some(Effect::InnerShadow {
-                color: StyleValue::Raw(color),
+                color: bind_color(raw_color, "color", bv, variable_map),
                 offset,
-                blur: StyleValue::Raw(blur),
-                spread: StyleValue::Raw(spread),
+                blur: bind_f32(raw_blur, "radius", bv, variable_map),
+                spread: bind_f32(raw_spread, "spread", bv, variable_map),
             })
         }
         "LAYER_BLUR" => {
-            let radius = effect.radius.unwrap_or(0.0);
+            let raw_radius = effect.radius.unwrap_or(0.0);
             Some(Effect::LayerBlur {
-                radius: StyleValue::Raw(radius),
+                radius: bind_f32(raw_radius, "radius", bv, variable_map),
             })
         }
         "BACKGROUND_BLUR" => {
-            let radius = effect.radius.unwrap_or(0.0);
+            let raw_radius = effect.radius.unwrap_or(0.0);
             Some(Effect::BackgroundBlur {
-                radius: StyleValue::Raw(radius),
+                radius: bind_f32(raw_radius, "radius", bv, variable_map),
             })
         }
         "TEXTURE" | "NOISE" => {
@@ -460,6 +551,10 @@ mod tests {
 
     fn empty_warnings() -> Vec<ImportWarning> {
         Vec::new()
+    }
+
+    fn empty_var_map() -> VariableMap {
+        HashMap::new()
     }
 
     // ── convert_color ───────────────────────────────────────────────────
@@ -544,7 +639,7 @@ mod tests {
             opacity: Some(0.5),
             ..Default::default()
         };
-        let fill = convert_fill(&paint, &mut w).expect("should produce a fill");
+        let fill = convert_fill(&paint, &empty_var_map(), &mut w).expect("should produce a fill");
         assert!(w.is_empty());
         match &fill.paint {
             Paint::Solid { color } => {
@@ -598,7 +693,7 @@ mod tests {
             ]),
             ..Default::default()
         };
-        let fill = convert_fill(&paint, &mut w).expect("should produce a fill");
+        let fill = convert_fill(&paint, &empty_var_map(), &mut w).expect("should produce a fill");
         assert!(w.is_empty());
         match &fill.paint {
             Paint::LinearGradient { stops, start, end } => {
@@ -619,7 +714,7 @@ mod tests {
             paint_type: "VIDEO".to_string(),
             ..Default::default()
         };
-        let fill = convert_fill(&paint, &mut w);
+        let fill = convert_fill(&paint, &empty_var_map(), &mut w);
         assert!(fill.is_none());
         assert_eq!(w.len(), 1);
         assert!(w[0].message.contains("VIDEO"));
@@ -639,7 +734,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        assert!(convert_fill(&paint, &mut w).is_none());
+        assert!(convert_fill(&paint, &empty_var_map(), &mut w).is_none());
         assert!(w.is_empty());
     }
 
@@ -662,7 +757,8 @@ mod tests {
             visible: Some(true),
             ..Default::default()
         };
-        let eff = convert_effect(&effect, &mut w).expect("should produce an effect");
+        let eff =
+            convert_effect(&effect, &empty_var_map(), &mut w).expect("should produce an effect");
         assert!(w.is_empty());
         match &eff {
             Effect::DropShadow {
@@ -697,7 +793,8 @@ mod tests {
             visible: Some(true),
             ..Default::default()
         };
-        let eff = convert_effect(&effect, &mut w).expect("should produce an effect");
+        let eff =
+            convert_effect(&effect, &empty_var_map(), &mut w).expect("should produce an effect");
         assert!(w.is_empty());
         match &eff {
             Effect::LayerBlur { radius } => {
@@ -715,7 +812,7 @@ mod tests {
             visible: Some(false),
             ..Default::default()
         };
-        assert!(convert_effect(&effect, &mut w).is_none());
+        assert!(convert_effect(&effect, &empty_var_map(), &mut w).is_none());
         assert!(w.is_empty());
     }
 
@@ -726,7 +823,7 @@ mod tests {
             effect_type: "NOISE".to_string(),
             ..Default::default()
         };
-        assert!(convert_effect(&effect, &mut w).is_none());
+        assert!(convert_effect(&effect, &empty_var_map(), &mut w).is_none());
         assert_eq!(w.len(), 1);
         assert!(w[0].message.contains("NOISE"));
     }
@@ -797,6 +894,7 @@ mod tests {
             Some("BEVEL"),
             None,
             Some(&[5.0, 3.0]),
+            &empty_var_map(),
             &mut w,
         )
         .expect("should produce a stroke");
@@ -824,7 +922,20 @@ mod tests {
             }),
             ..Default::default()
         };
-        assert!(convert_stroke(&paint, 1.0, None, None, None, None, None, &mut w).is_none());
+        assert!(
+            convert_stroke(
+                &paint,
+                1.0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                &empty_var_map(),
+                &mut w
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -848,11 +959,119 @@ mod tests {
             None,
             None,
             None,
+            &empty_var_map(),
             &mut w,
         )
         .expect("should produce a stroke");
         assert_eq!(stroke.cap, StrokeCap::Butt);
         assert_eq!(w.len(), 1);
         assert!(w[0].message.contains("TRIANGLE_ARROW"));
+    }
+
+    // ── boundVariables → StyleValue::Bound ────────────────────────────
+
+    #[test]
+    fn bound_variables_produce_style_value_bound() {
+        use super::super::types::FigmaVariableAlias;
+
+        let mut w = empty_warnings();
+        let paint = FigmaPaint {
+            paint_type: "SOLID".to_string(),
+            color: Some(FigmaColor {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+            bound_variables: Some(HashMap::from([(
+                "color".to_string(),
+                FigmaVariableAlias {
+                    alias_type: "VARIABLE_ALIAS".to_string(),
+                    id: "V:1".to_string(),
+                },
+            )])),
+            ..Default::default()
+        };
+        let variable_map: VariableMap = HashMap::from([("V:1".to_string(), (0u32, 0u32))]);
+        let fill = convert_fill(&paint, &variable_map, &mut w).unwrap();
+        assert!(w.is_empty());
+        match &fill.paint {
+            Paint::Solid { color } => {
+                assert!(color.is_bound(), "Color should be bound to a token");
+            }
+            _ => panic!("Expected Solid paint"),
+        }
+    }
+
+    #[test]
+    fn unmatched_bound_variable_stays_raw() {
+        use super::super::types::FigmaVariableAlias;
+
+        let mut w = empty_warnings();
+        let paint = FigmaPaint {
+            paint_type: "SOLID".to_string(),
+            color: Some(FigmaColor {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+            bound_variables: Some(HashMap::from([(
+                "color".to_string(),
+                FigmaVariableAlias {
+                    alias_type: "VARIABLE_ALIAS".to_string(),
+                    id: "V:999".to_string(),
+                },
+            )])),
+            ..Default::default()
+        };
+        // variable_map doesn't contain V:999
+        let variable_map: VariableMap = HashMap::new();
+        let fill = convert_fill(&paint, &variable_map, &mut w).unwrap();
+        match &fill.paint {
+            Paint::Solid { color } => {
+                assert!(
+                    !color.is_bound(),
+                    "Color should remain raw when variable not found"
+                );
+            }
+            _ => panic!("Expected Solid paint"),
+        }
+    }
+
+    #[test]
+    fn bound_effect_color_produces_bound() {
+        use super::super::types::FigmaVariableAlias;
+
+        let mut w = empty_warnings();
+        let effect = FigmaEffect {
+            effect_type: "DROP_SHADOW".to_string(),
+            color: Some(FigmaColor {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.25,
+            }),
+            offset: Some(FigmaVector { x: 0.0, y: 4.0 }),
+            radius: Some(8.0),
+            spread: Some(0.0),
+            visible: Some(true),
+            bound_variables: Some(HashMap::from([(
+                "color".to_string(),
+                FigmaVariableAlias {
+                    alias_type: "VARIABLE_ALIAS".to_string(),
+                    id: "V:2".to_string(),
+                },
+            )])),
+            ..Default::default()
+        };
+        let variable_map: VariableMap = HashMap::from([("V:2".to_string(), (0u32, 1u32))]);
+        let eff = convert_effect(&effect, &variable_map, &mut w).unwrap();
+        match &eff {
+            Effect::DropShadow { color, .. } => {
+                assert!(color.is_bound(), "Effect color should be bound");
+            }
+            _ => panic!("Expected DropShadow"),
+        }
     }
 }
