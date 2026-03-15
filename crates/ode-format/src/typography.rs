@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use schemars::JsonSchema;
 use crate::style::StyleValue;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Font family name. Type alias for spec alignment — allows future refinement.
 pub type FontFamily = String;
@@ -54,19 +54,38 @@ pub enum LineHeight {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum TextAlign { Left, Center, Right, Justify }
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+    Justify,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum VerticalAlign { Top, Middle, Bottom }
+pub enum VerticalAlign {
+    Top,
+    Middle,
+    Bottom,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum TextDecoration { None, Underline, Strikethrough, Both }
+pub enum TextDecoration {
+    None,
+    Underline,
+    Strikethrough,
+    Both,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum TextTransform { None, Uppercase, Lowercase, Capitalize }
+pub enum TextTransform {
+    None,
+    Uppercase,
+    Lowercase,
+    Capitalize,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct OpenTypeFeature {
@@ -129,7 +148,9 @@ pub enum TextSizingMode {
 }
 
 impl Default for TextSizingMode {
-    fn default() -> Self { Self::Fixed }
+    fn default() -> Self {
+        Self::Fixed
+    }
 }
 
 #[cfg(test)]
@@ -147,7 +168,10 @@ mod tests {
 
     #[test]
     fn opentype_feature_tag() {
-        let feat = OpenTypeFeature { tag: *b"liga", enabled: true };
+        let feat = OpenTypeFeature {
+            tag: *b"liga",
+            enabled: true,
+        };
         assert_eq!(&feat.tag, b"liga");
     }
 
@@ -193,7 +217,11 @@ mod tests {
 
     #[test]
     fn text_sizing_mode_roundtrip() {
-        for mode in [TextSizingMode::Fixed, TextSizingMode::AutoHeight, TextSizingMode::AutoWidth] {
+        for mode in [
+            TextSizingMode::Fixed,
+            TextSizingMode::AutoHeight,
+            TextSizingMode::AutoWidth,
+        ] {
             let json = serde_json::to_string(&mode).unwrap();
             let parsed: TextSizingMode = serde_json::from_str(&json).unwrap();
             assert_eq!(mode, parsed);

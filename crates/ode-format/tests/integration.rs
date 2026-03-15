@@ -74,12 +74,19 @@ fn full_document_roundtrip() {
     assert_eq!(parsed.name, "Integration Test");
     assert_eq!(parsed.canvas.len(), 1);
     assert_eq!(parsed.views.len(), 1);
-    assert_eq!(parsed.format_version, ode_format::document::Version(0, 2, 0));
+    assert_eq!(
+        parsed.format_version,
+        ode_format::document::Version(0, 2, 0)
+    );
 
     // Verify parent-child relationship survived roundtrip
     let parsed_frame_id = parsed.canvas[0];
     if let ode_format::node::NodeKind::Frame(ref data) = parsed.nodes[parsed_frame_id].kind {
-        assert_eq!(data.container.children.len(), 1, "Frame should have 1 child after roundtrip");
+        assert_eq!(
+            data.container.children.len(),
+            1,
+            "Frame should have 1 child after roundtrip"
+        );
     } else {
         panic!("Expected Frame node");
     }
@@ -97,9 +104,11 @@ fn style_value_bound_with_token_roundtrip() {
 
     // Create token
     let col = doc.tokens.add_collection("Colors", vec!["Light"]);
-    let tok_id = doc.tokens.add_token(col, "primary", TokenValue::Color(
-        Color::from_hex("#3b82f6").unwrap()
-    ));
+    let tok_id = doc.tokens.add_token(
+        col,
+        "primary",
+        TokenValue::Color(Color::from_hex("#3b82f6").unwrap()),
+    );
 
     // Create frame with a token-bound fill
     let mut frame = Node::new_frame("Card", 300.0, 200.0);
@@ -107,7 +116,10 @@ fn style_value_bound_with_token_roundtrip() {
         data.visual.fills.push(Fill {
             paint: Paint::Solid {
                 color: StyleValue::Bound {
-                    token: TokenRef { collection_id: col, token_id: tok_id },
+                    token: TokenRef {
+                        collection_id: col,
+                        token_id: tok_id,
+                    },
                     resolved: Color::from_hex("#3b82f6").unwrap(),
                 },
             },
@@ -128,7 +140,10 @@ fn style_value_bound_with_token_roundtrip() {
     if let ode_format::node::NodeKind::Frame(ref data) = parsed.nodes[parsed_frame_id].kind {
         assert_eq!(data.visual.fills.len(), 1);
         if let Paint::Solid { ref color } = data.visual.fills[0].paint {
-            assert!(color.is_bound(), "Fill color should still be bound to token after roundtrip");
+            assert!(
+                color.is_bound(),
+                "Fill color should still be bound to token after roundtrip"
+            );
         } else {
             panic!("Expected Solid paint");
         }
@@ -145,9 +160,11 @@ fn document_with_tokens() {
 
     // Add color tokens
     let col = doc.tokens.add_collection("Colors", vec!["Light", "Dark"]);
-    doc.tokens.add_token(col, "primary", TokenValue::Color(
-        Color::from_hex("#3b82f6").unwrap()
-    ));
+    doc.tokens.add_token(
+        col,
+        "primary",
+        TokenValue::Color(Color::from_hex("#3b82f6").unwrap()),
+    );
 
     // Resolve token
     let tok_id = doc.tokens.collections[0].tokens[0].id;

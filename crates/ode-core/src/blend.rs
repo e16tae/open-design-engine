@@ -37,11 +37,21 @@ mod tests {
     #[test]
     fn all_blend_modes_map() {
         let modes = [
-            BlendMode::Normal, BlendMode::Multiply, BlendMode::Screen,
-            BlendMode::Overlay, BlendMode::Darken, BlendMode::Lighten,
-            BlendMode::ColorDodge, BlendMode::ColorBurn, BlendMode::HardLight,
-            BlendMode::SoftLight, BlendMode::Difference, BlendMode::Exclusion,
-            BlendMode::Hue, BlendMode::Saturation, BlendMode::Color,
+            BlendMode::Normal,
+            BlendMode::Multiply,
+            BlendMode::Screen,
+            BlendMode::Overlay,
+            BlendMode::Darken,
+            BlendMode::Lighten,
+            BlendMode::ColorDodge,
+            BlendMode::ColorBurn,
+            BlendMode::HardLight,
+            BlendMode::SoftLight,
+            BlendMode::Difference,
+            BlendMode::Exclusion,
+            BlendMode::Hue,
+            BlendMode::Saturation,
+            BlendMode::Color,
             BlendMode::Luminosity,
         ];
         for mode in modes {
@@ -51,7 +61,10 @@ mod tests {
 
     #[test]
     fn normal_maps_to_source_over() {
-        assert!(matches!(to_skia_blend(BlendMode::Normal), tiny_skia::BlendMode::SourceOver));
+        assert!(matches!(
+            to_skia_blend(BlendMode::Normal),
+            tiny_skia::BlendMode::SourceOver
+        ));
     }
 
     #[test]

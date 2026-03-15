@@ -13,9 +13,7 @@ use krilla::paint::{
 };
 use krilla::surface::Surface;
 use kurbo::{BezPath, PathEl};
-use ode_core::scene::{
-    RenderCommand, ResolvedGradientStop, ResolvedPaint, Scene, StrokeStyle,
-};
+use ode_core::scene::{RenderCommand, ResolvedGradientStop, ResolvedPaint, Scene, StrokeStyle};
 use ode_format::color::Color;
 use ode_format::node::FillRule;
 use ode_format::style::{BlendMode, StrokeCap, StrokeJoin, StrokePosition};
@@ -60,7 +58,7 @@ impl PdfExporter {
         page.finish();
 
         doc.finish()
-            .map_err(|e| ExportError::PdfGenerationFailed(format!("{:?}", e)))
+            .map_err(|e| ExportError::PdfGenerationFailed(format!("{e:?}")))
     }
 }
 
@@ -102,8 +100,7 @@ fn process_command(
             }
 
             if (*opacity - 1.0).abs() > f32::EPSILON {
-                let nf = NormalizedF32::new(opacity.clamp(0.0, 1.0))
-                    .unwrap_or(NormalizedF32::ONE);
+                let nf = NormalizedF32::new(opacity.clamp(0.0, 1.0)).unwrap_or(NormalizedF32::ONE);
                 surface.push_opacity(nf);
                 push_count += 1;
             }
@@ -133,8 +130,7 @@ fn process_command(
 
             let (resolved_paint, alpha) =
                 resolve_paint_with_surface(surface, paint, scene_w, scene_h)?;
-            let nf_alpha =
-                NormalizedF32::new(alpha.clamp(0.0, 1.0)).unwrap_or(NormalizedF32::ONE);
+            let nf_alpha = NormalizedF32::new(alpha.clamp(0.0, 1.0)).unwrap_or(NormalizedF32::ONE);
 
             surface.push_transform(&transform_to_krilla(transform));
             surface.set_fill(Some(KrillaFill {
@@ -229,12 +225,9 @@ fn draw_stroke(
                 match el {
                     PathEl::MoveTo(p) => clip_builder.move_to(p.x as f32, p.y as f32),
                     PathEl::LineTo(p) => clip_builder.line_to(p.x as f32, p.y as f32),
-                    PathEl::QuadTo(p1, p2) => clip_builder.quad_to(
-                        p1.x as f32,
-                        p1.y as f32,
-                        p2.x as f32,
-                        p2.y as f32,
-                    ),
+                    PathEl::QuadTo(p1, p2) => {
+                        clip_builder.quad_to(p1.x as f32, p1.y as f32, p2.x as f32, p2.y as f32)
+                    }
                     PathEl::CurveTo(p1, p2, p3) => clip_builder.cubic_to(
                         p1.x as f32,
                         p1.y as f32,
@@ -310,14 +303,8 @@ fn resolve_paint_with_surface(
                 // Scale around center: translate(cx,cy) * scale(1, sy) * translate(-cx,-cy)
                 // Combined affine: [1, 0, 0, sy, cx*(1-1), cy*(1-sy)]
                 //                = [1, 0, 0, sy, 0, cy*(1-sy)]
-                let transform = KrillaTransform::from_row(
-                    1.0,
-                    0.0,
-                    0.0,
-                    scale_y,
-                    0.0,
-                    cy * (1.0 - scale_y),
-                );
+                let transform =
+                    KrillaTransform::from_row(1.0, 0.0, 0.0, scale_y, 0.0, cy * (1.0 - scale_y));
                 (rx, transform)
             } else {
                 (rx, KrillaTransform::identity())
@@ -397,7 +384,7 @@ fn rasterize_gradient_to_pattern(
 
     let image = Image::from_rgba8(rgba_data, w, h);
     let size = KrillaSize::from_wh(scene_w, scene_h).ok_or_else(|| {
-        ExportError::PdfGenerationFailed(format!("invalid size: {}x{}", scene_w, scene_h))
+        ExportError::PdfGenerationFailed(format!("invalid size: {scene_w}x{scene_h}"))
     })?;
 
     // Create pattern: use surface's stream_builder to draw the image into a sub-surface

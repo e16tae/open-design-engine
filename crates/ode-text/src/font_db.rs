@@ -125,18 +125,16 @@ impl FontDatabase {
                 continue;
             }
 
-            let ext = path.extension()
+            let ext = path
+                .extension()
                 .and_then(|e| e.to_str())
                 .map(|e| e.to_lowercase());
 
-            match ext.as_deref() {
-                Some("ttf" | "otf" | "ttc") => {
-                    if let Ok(data) = std::fs::read(&path) {
-                        // For TTC (font collections), we only load the first face
-                        self.add_font(data);
-                    }
+            if let Some("ttf" | "otf" | "ttc") = ext.as_deref() {
+                if let Ok(data) = std::fs::read(&path) {
+                    // For TTC (font collections), we only load the first face
+                    self.add_font(data);
                 }
-                _ => {}
             }
         }
     }
@@ -172,8 +170,8 @@ fn extract_font_metadata(data: &[u8]) -> Option<(String, u16)> {
     use skrifa::MetadataProvider;
     use skrifa::string::StringId;
 
-    let family = font.localized_strings(StringId::FAMILY_NAME)
-        .into_iter()
+    let family = font
+        .localized_strings(StringId::FAMILY_NAME)
         .find_map(|s| {
             let chars: String = s.chars().collect();
             if !chars.is_empty() { Some(chars) } else { None }
@@ -182,7 +180,9 @@ fn extract_font_metadata(data: &[u8]) -> Option<(String, u16)> {
 
     // Extract weight from OS/2 table
     use skrifa::raw::TableProvider;
-    let weight = font.os2().ok()
+    let weight = font
+        .os2()
+        .ok()
         .map(|os2| os2.us_weight_class())
         .unwrap_or(400);
 
@@ -205,7 +205,10 @@ mod tests {
         let db = FontDatabase::new_system();
         // On macOS, system fonts should be available
         if cfg!(target_os = "macos") {
-            assert!(!db.is_empty(), "System font database should not be empty on macOS");
+            assert!(
+                !db.is_empty(),
+                "System font database should not be empty on macOS"
+            );
         }
     }
 }

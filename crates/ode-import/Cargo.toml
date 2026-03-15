@@ -1,0 +1,15 @@
+[package]
+name = "ode-import"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ODE import — convert design files from external formats"
+
+[dependencies]
+ode-format = { path = "../ode-format" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+nanoid = { workspace = true }
+thiserror = { workspace = true }

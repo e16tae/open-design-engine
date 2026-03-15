@@ -1,0 +1,101 @@
+{
+  "name": "Test File",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Page 1",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "1:1",
+            "name": "Card",
+            "type": "FRAME",
+            "visible": true,
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "opacity": 1.0,
+                "color": { "r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0 }
+              }
+            ],
+            "strokes": [],
+            "effects": [],
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 300, "height": 200 },
+            "relativeTransform": [[1, 0, 0], [0, 1, 0]],
+            "size": { "x": 300, "y": 200 },
+            "clipsContent": true,
+            "blendMode": "NORMAL",
+            "children": [
+              {
+                "id": "2:1",
+                "name": "Title",
+                "type": "TEXT",
+                "visible": true,
+                "characters": "Hello World",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 400,
+                  "fontSize": 16,
+                  "textAlignHorizontal": "LEFT",
+                  "textAlignVertical": "TOP",
+                  "letterSpacing": 0,
+                  "lineHeightPx": 24,
+                  "lineHeightUnit": "PIXELS"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "color": { "r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0 }
+                  }
+                ],
+                "strokes": [],
+                "effects": [],
+                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 100, "height": 24 },
+                "relativeTransform": [[1, 0, 16], [0, 1, 16]],
+                "size": { "x": 100, "y": 24 },
+                "blendMode": "NORMAL"
+              },
+              {
+                "id": "2:2",
+                "name": "Icon",
+                "type": "VECTOR",
+                "visible": true,
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "color": { "r": 0.0, "g": 0.5, "b": 1.0, "a": 1.0 }
+                  }
+                ],
+                "strokes": [],
+                "effects": [],
+                "fillGeometry": [
+                  {
+                    "path": "M 0 0 L 24 0 L 24 24 L 0 24 Z",
+                    "windingRule": "NONZERO"
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 16, "y": 56, "width": 24, "height": 24 },
+                "relativeTransform": [[1, 0, 16], [0, 1, 56]],
+                "size": { "x": 24, "y": 24 },
+                "blendMode": "NORMAL"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "components": {},
+  "componentSets": {},
+  "schemaVersion": 0,
+  "styles": {}
+}

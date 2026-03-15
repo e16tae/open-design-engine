@@ -1,5 +1,5 @@
-use thiserror::Error;
 use ode_format::node::NodeId;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum RenderError {

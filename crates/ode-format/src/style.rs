@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use schemars::JsonSchema;
 use crate::color::Color;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 // ─── Token ID Types (shared with tokens module) ───
 pub type CollectionId = u32;
@@ -38,41 +38,90 @@ impl<T: Clone> StyleValue<T> {
 
 // ─── Geometry ───
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct Point { pub x: f32, pub y: f32 }
+pub struct Point {
+    pub x: f32,
+    pub y: f32,
+}
 
 // ─── BlendMode ───
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum BlendMode {
-    Normal, Multiply, Screen, Overlay, Darken, Lighten,
-    ColorDodge, ColorBurn, HardLight, SoftLight,
-    Difference, Exclusion, Hue, Saturation, Color, Luminosity,
+    Normal,
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
 }
 impl Default for BlendMode {
-    fn default() -> Self { Self::Normal }
+    fn default() -> Self {
+        Self::Normal
+    }
 }
 
 // ─── Paint ───
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Paint {
-    Solid { color: StyleValue<Color> },
-    LinearGradient { stops: Vec<GradientStop>, start: Point, end: Point },
-    RadialGradient { stops: Vec<GradientStop>, center: Point, radius: Point },
-    AngularGradient { stops: Vec<GradientStop>, center: Point, angle: f32 },
-    DiamondGradient { stops: Vec<GradientStop>, center: Point, radius: Point },
+    Solid {
+        color: StyleValue<Color>,
+    },
+    LinearGradient {
+        stops: Vec<GradientStop>,
+        start: Point,
+        end: Point,
+    },
+    RadialGradient {
+        stops: Vec<GradientStop>,
+        center: Point,
+        radius: Point,
+    },
+    AngularGradient {
+        stops: Vec<GradientStop>,
+        center: Point,
+        angle: f32,
+    },
+    DiamondGradient {
+        stops: Vec<GradientStop>,
+        center: Point,
+        radius: Point,
+    },
     MeshGradient(Box<MeshGradientData>),
-    ImageFill { source: ImageSource, mode: ImageFillMode },
+    ImageFill {
+        source: ImageSource,
+        mode: ImageFillMode,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct GradientStop { pub position: f32, pub color: StyleValue<Color> }
+pub struct GradientStop {
+    pub position: f32,
+    pub color: StyleValue<Color>,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct MeshGradientData { pub rows: u32, pub columns: u32, pub points: Vec<MeshPoint> }
+pub struct MeshGradientData {
+    pub rows: u32,
+    pub columns: u32,
+    pub points: Vec<MeshPoint>,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct MeshPoint { pub position: Point, pub color: StyleValue<Color> }
+pub struct MeshPoint {
+    pub position: Point,
+    pub color: StyleValue<Color>,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
@@ -83,7 +132,12 @@ pub enum ImageSource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum ImageFillMode { Fill, Fit, Crop, Tile }
+pub enum ImageFillMode {
+    Fill,
+    Fit,
+    Crop,
+    Tile,
+}
 
 // ─── Fill ───
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -111,27 +165,56 @@ pub struct Stroke {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum StrokePosition { Inside, Outside, Center }
+pub enum StrokePosition {
+    Inside,
+    Outside,
+    Center,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum StrokeCap { Butt, Round, Square }
+pub enum StrokeCap {
+    Butt,
+    Round,
+    Square,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum StrokeJoin { Miter, Round, Bevel }
+pub enum StrokeJoin {
+    Miter,
+    Round,
+    Bevel,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DashPattern { pub segments: Vec<f32>, pub offset: f32 }
+pub struct DashPattern {
+    pub segments: Vec<f32>,
+    pub offset: f32,
+}
 
 // ─── Effect ───
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Effect {
-    DropShadow { color: StyleValue<Color>, offset: Point, blur: StyleValue<f32>, spread: StyleValue<f32> },
-    InnerShadow { color: StyleValue<Color>, offset: Point, blur: StyleValue<f32>, spread: StyleValue<f32> },
-    LayerBlur { radius: StyleValue<f32> },
-    BackgroundBlur { radius: StyleValue<f32> },
+    DropShadow {
+        color: StyleValue<Color>,
+        offset: Point,
+        blur: StyleValue<f32>,
+        spread: StyleValue<f32>,
+    },
+    InnerShadow {
+        color: StyleValue<Color>,
+        offset: Point,
+        blur: StyleValue<f32>,
+        spread: StyleValue<f32>,
+    },
+    LayerBlur {
+        radius: StyleValue<f32>,
+    },
+    BackgroundBlur {
+        radius: StyleValue<f32>,
+    },
 }
 
 // ─── Composable Property Structs ───
@@ -160,7 +243,10 @@ mod tests {
     #[test]
     fn style_value_bound() {
         let val: StyleValue<f32> = StyleValue::Bound {
-            token: TokenRef { collection_id: 0, token_id: 0 },
+            token: TokenRef {
+                collection_id: 0,
+                token_id: 0,
+            },
             resolved: 42.0,
         };
         assert!((val.value() - 42.0).abs() < f32::EPSILON);
@@ -178,7 +264,9 @@ mod tests {
     #[test]
     fn fill_with_solid_paint() {
         let fill = Fill {
-            paint: Paint::Solid { color: StyleValue::Raw(Color::black()) },
+            paint: Paint::Solid {
+                color: StyleValue::Raw(Color::black()),
+            },
             opacity: StyleValue::Raw(1.0),
             blend_mode: BlendMode::Normal,
             visible: true,
@@ -192,8 +280,14 @@ mod tests {
     fn linear_gradient_roundtrip() {
         let paint = Paint::LinearGradient {
             stops: vec![
-                GradientStop { position: 0.0, color: StyleValue::Raw(Color::black()) },
-                GradientStop { position: 1.0, color: StyleValue::Raw(Color::white()) },
+                GradientStop {
+                    position: 0.0,
+                    color: StyleValue::Raw(Color::black()),
+                },
+                GradientStop {
+                    position: 1.0,
+                    color: StyleValue::Raw(Color::white()),
+                },
             ],
             start: Point { x: 0.0, y: 0.0 },
             end: Point { x: 1.0, y: 1.0 },
@@ -206,13 +300,18 @@ mod tests {
     #[test]
     fn stroke_roundtrip() {
         let stroke = Stroke {
-            paint: Paint::Solid { color: StyleValue::Raw(Color::black()) },
+            paint: Paint::Solid {
+                color: StyleValue::Raw(Color::black()),
+            },
             width: StyleValue::Raw(2.0),
             position: StrokePosition::Center,
             cap: StrokeCap::Round,
             join: StrokeJoin::Round,
             miter_limit: 4.0,
-            dash: Some(DashPattern { segments: vec![5.0, 3.0], offset: 0.0 }),
+            dash: Some(DashPattern {
+                segments: vec![5.0, 3.0],
+                offset: 0.0,
+            }),
             opacity: StyleValue::Raw(1.0),
             blend_mode: BlendMode::Normal,
             visible: true,
@@ -225,7 +324,12 @@ mod tests {
     #[test]
     fn drop_shadow_roundtrip() {
         let effect = Effect::DropShadow {
-            color: StyleValue::Raw(Color::Srgb { r: 0.0, g: 0.0, b: 0.0, a: 0.25 }),
+            color: StyleValue::Raw(Color::Srgb {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.25,
+            }),
             offset: Point { x: 0.0, y: 4.0 },
             blur: StyleValue::Raw(8.0),
             spread: StyleValue::Raw(0.0),

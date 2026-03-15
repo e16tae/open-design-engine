@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use ode_format::document::Document;
-use ode_format::node::{Node, NodeId, NodeKind, FillRule as OdeFillRule, Override};
-use ode_format::style::{Paint, Effect, VisualProps, BlendMode};
-use ode_text::FontDatabase;
 use crate::error::ConvertError;
-use crate::scene::*;
 use crate::path;
+use crate::scene::*;
+use ode_format::document::Document;
+use ode_format::node::{FillRule as OdeFillRule, Node, NodeId, NodeKind, Override};
+use ode_format::style::{BlendMode, Effect, Paint, VisualProps};
+use ode_text::FontDatabase;
 
 /// Maximum nesting depth for instance resolution to prevent stack overflow.
 const MAX_INSTANCE_DEPTH: usize = 32;
@@ -42,10 +42,22 @@ impl Scene {
         let identity = tiny_skia::Transform::identity();
 
         for &root_id in &doc.canvas {
-            convert_node(doc, root_id, identity, &mut commands, font_db, &layout_map, &stable_id_index)?;
+            convert_node(
+                doc,
+                root_id,
+                identity,
+                &mut commands,
+                font_db,
+                &layout_map,
+                &stable_id_index,
+            )?;
         }
 
-        Ok(Scene { width, height, commands })
+        Ok(Scene {
+            width,
+            height,
+            commands,
+        })
     }
 }
 
@@ -76,8 +88,15 @@ fn convert_node(
     if let NodeKind::Instance(ref inst_data) = node.kind {
         let mut resolution_stack = Vec::new();
         return resolve_instance(
-            doc, node, inst_data, parent_transform, layout_rect,
-            commands, font_db, layout_map, stable_id_index,
+            doc,
+            node,
+            inst_data,
+            parent_transform,
+            layout_rect,
+            commands,
+            font_db,
+            layout_map,
+            stable_id_index,
             &mut resolution_stack,
         );
     }
@@ -109,14 +128,28 @@ fn convert_node(
             convert_text_node(text_data, visual, current_transform, commands, font_db)?;
         } else {
             let node_path = get_node_path(doc, node, layout_rect);
-            emit_visual(visual, &node_path, get_fill_rule(node), current_transform, commands);
+            emit_visual(
+                visual,
+                &node_path,
+                get_fill_rule(node),
+                current_transform,
+                commands,
+            );
         }
     }
 
     // Recurse into children
     if let Some(children) = node.kind.children() {
         for &child_id in children {
-            convert_node(doc, child_id, current_transform, commands, font_db, layout_map, stable_id_index)?;
+            convert_node(
+                doc,
+                child_id,
+                current_transform,
+                commands,
+                font_db,
+                layout_map,
+                stable_id_index,
+            )?;
         }
     }
 
@@ -138,7 +171,13 @@ fn emit_visual(
     // Effects that render BEHIND content (DropShadow)
     if let Some(bp) = node_path {
         for effect in &visual.effects {
-            if let Effect::DropShadow { color, offset, blur, spread } = effect {
+            if let Effect::DropShadow {
+                color,
+                offset,
+                blur,
+                spread,
+            } = effect
+            {
                 commands.push(RenderCommand::ApplyEffect {
                     effect: ResolvedEffect::DropShadow {
                         color: color.value(),
@@ -156,7 +195,9 @@ fn emit_visual(
     // Fills
     if let Some(bp) = node_path {
         for fill in &visual.fills {
-            if !fill.visible { continue; }
+            if !fill.visible {
+                continue;
+            }
             if let Some(resolved) = resolve_paint(&fill.paint) {
                 commands.push(RenderCommand::FillPath {
                     path: bp.clone(),
@@ -169,7 +210,9 @@ fn emit_visual(
 
         // Strokes
         for stroke in &visual.strokes {
-            if !stroke.visible { continue; }
+            if !stroke.visible {
+                continue;
+            }
             if let Some(resolved) = resolve_paint(&stroke.paint) {
                 commands.push(RenderCommand::StrokePath {
                     path: bp.clone(),
@@ -191,7 +234,12 @@ fn emit_visual(
     // Effects that render ON content (InnerShadow, LayerBlur, BackgroundBlur)
     for effect in &visual.effects {
         match effect {
-            Effect::InnerShadow { color, offset, blur, spread } => {
+            Effect::InnerShadow {
+                color,
+                offset,
+                blur,
+                spread,
+            } => {
                 if let Some(bp) = node_path {
                     commands.push(RenderCommand::ApplyEffect {
                         effect: ResolvedEffect::InnerShadow {
@@ -207,12 +255,16 @@ fn emit_visual(
             }
             Effect::LayerBlur { radius } => {
                 commands.push(RenderCommand::ApplyEffect {
-                    effect: ResolvedEffect::LayerBlur { radius: radius.value() },
+                    effect: ResolvedEffect::LayerBlur {
+                        radius: radius.value(),
+                    },
                 });
             }
             Effect::BackgroundBlur { radius } => {
                 commands.push(RenderCommand::ApplyEffect {
-                    effect: ResolvedEffect::BackgroundBlur { radius: radius.value() },
+                    effect: ResolvedEffect::BackgroundBlur {
+                        radius: radius.value(),
+                    },
                 });
             }
             Effect::DropShadow { .. } => {} // Already handled above
@@ -276,6 +328,7 @@ fn is_visible(overrides: &[&Override]) -> bool {
 }
 
 /// Resolve and render an Instance node by expanding its source component.
+#[allow(clippy::too_many_arguments)]
 fn resolve_instance(
     doc: &Document,
     instance_node: &Node,
@@ -290,9 +343,11 @@ fn resolve_instance(
 ) -> Result<(), ConvertError> {
     // Cycle detection
     if resolution_stack.contains(&inst_data.source_component) {
-        return Err(ConvertError::InstanceCycle(
-            format!("{} → {}", resolution_stack.join(" → "), inst_data.source_component),
-        ));
+        return Err(ConvertError::InstanceCycle(format!(
+            "{} → {}",
+            resolution_stack.join(" → "),
+            inst_data.source_component
+        )));
     }
     if resolution_stack.len() >= MAX_INSTANCE_DEPTH {
         return Ok(()); // Depth limit — silently stop
@@ -328,7 +383,11 @@ fn resolve_instance(
 
     // Clip path from resolved size + component corner radius
     let clip = if width > 0.0 && height > 0.0 {
-        Some(path::rounded_rect_path(width, height, comp_frame.corner_radius))
+        Some(path::rounded_rect_path(
+            width,
+            height,
+            comp_frame.corner_radius,
+        ))
     } else {
         None
     };
@@ -355,17 +414,34 @@ fn resolve_instance(
     });
     let visual = apply_visual_overrides(&comp_frame.visual, root_overrides);
     let frame_path = if width > 0.0 && height > 0.0 {
-        Some(path::rounded_rect_path(width, height, comp_frame.corner_radius))
+        Some(path::rounded_rect_path(
+            width,
+            height,
+            comp_frame.corner_radius,
+        ))
     } else {
         None
     };
-    emit_visual(&visual, &frame_path, OdeFillRule::NonZero, current_transform, commands);
+    emit_visual(
+        &visual,
+        &frame_path,
+        OdeFillRule::NonZero,
+        current_transform,
+        commands,
+    );
 
     // Recurse into component's children
     for &child_id in &comp_frame.container.children {
         convert_component_child(
-            doc, child_id, current_transform, commands, font_db,
-            layout_map, stable_id_index, &override_map, resolution_stack,
+            doc,
+            child_id,
+            current_transform,
+            commands,
+            font_db,
+            layout_map,
+            stable_id_index,
+            &override_map,
+            resolution_stack,
         )?;
     }
 
@@ -377,6 +453,7 @@ fn resolve_instance(
 }
 
 /// Render a child node from the component tree with override application.
+#[allow(clippy::too_many_arguments)]
 fn convert_component_child(
     doc: &Document,
     child_id: NodeId,
@@ -404,8 +481,15 @@ fn convert_component_child(
     let child_layout_rect = layout_map.get(&child_id);
     if let NodeKind::Instance(ref nested_inst) = child.kind {
         return resolve_instance(
-            doc, child, nested_inst, parent_transform, child_layout_rect,
-            commands, font_db, layout_map, stable_id_index,
+            doc,
+            child,
+            nested_inst,
+            parent_transform,
+            child_layout_rect,
+            commands,
+            font_db,
+            layout_map,
+            stable_id_index,
             resolution_stack,
         );
     }
@@ -475,7 +559,13 @@ fn convert_component_child(
                 let mut modified = text_data.as_ref().clone();
                 modified.content = new_content.to_string();
                 modified.visual = visual;
-                convert_text_node(&modified, &modified.visual.clone(), current_transform, commands, font_db)?;
+                convert_text_node(
+                    &modified,
+                    &modified.visual.clone(),
+                    current_transform,
+                    commands,
+                    font_db,
+                )?;
             } else {
                 convert_text_node(text_data, &visual, current_transform, commands, font_db)?;
             }
@@ -496,7 +586,13 @@ fn convert_component_child(
             } else {
                 get_node_path(doc, child, child_layout_rect)
             };
-            emit_visual(&visual, &node_path, get_fill_rule(child), current_transform, commands);
+            emit_visual(
+                &visual,
+                &node_path,
+                get_fill_rule(child),
+                current_transform,
+                commands,
+            );
         }
     }
 
@@ -504,8 +600,15 @@ fn convert_component_child(
     if let Some(children) = child.kind.children() {
         for &grandchild_id in children {
             convert_component_child(
-                doc, grandchild_id, current_transform, commands, font_db,
-                layout_map, stable_id_index, override_map, resolution_stack,
+                doc,
+                grandchild_id,
+                current_transform,
+                commands,
+                font_db,
+                layout_map,
+                stable_id_index,
+                override_map,
+                resolution_stack,
             )?;
         }
     }
@@ -549,7 +652,13 @@ fn convert_text_node(
     // Effects behind content (DropShadow) — use text bounding box
     let bbox = make_text_bbox(text_data);
     for effect in &visual.effects {
-        if let Effect::DropShadow { color, offset, blur, spread } = effect {
+        if let Effect::DropShadow {
+            color,
+            offset,
+            blur,
+            spread,
+        } = effect
+        {
             commands.push(RenderCommand::ApplyEffect {
                 effect: ResolvedEffect::DropShadow {
                     color: color.value(),
@@ -586,7 +695,12 @@ fn convert_text_node(
     // Effects on content
     for effect in &visual.effects {
         match effect {
-            Effect::InnerShadow { color, offset, blur, spread } => {
+            Effect::InnerShadow {
+                color,
+                offset,
+                blur,
+                spread,
+            } => {
                 commands.push(RenderCommand::ApplyEffect {
                     effect: ResolvedEffect::InnerShadow {
                         color: color.value(),
@@ -600,12 +714,16 @@ fn convert_text_node(
             }
             Effect::LayerBlur { radius } => {
                 commands.push(RenderCommand::ApplyEffect {
-                    effect: ResolvedEffect::LayerBlur { radius: radius.value() },
+                    effect: ResolvedEffect::LayerBlur {
+                        radius: radius.value(),
+                    },
                 });
             }
             Effect::BackgroundBlur { radius } => {
                 commands.push(RenderCommand::ApplyEffect {
-                    effect: ResolvedEffect::BackgroundBlur { radius: radius.value() },
+                    effect: ResolvedEffect::BackgroundBlur {
+                        radius: radius.value(),
+                    },
                 });
             }
             Effect::DropShadow { .. } => {}
@@ -659,9 +777,7 @@ fn get_node_path(
                 None
             }
         }
-        NodeKind::Vector(data) => {
-            Some(path::to_bezpath(&data.path))
-        }
+        NodeKind::Vector(data) => Some(path::to_bezpath(&data.path)),
         NodeKind::BooleanOp(data) => {
             if let Some(children) = node.kind.children() {
                 let mut paths: Vec<kurbo::BezPath> = Vec::new();
@@ -670,9 +786,12 @@ fn get_node_path(
                     if let Some(mut child_path) = get_node_path(doc, child, None) {
                         let t = &child.transform;
                         let affine = kurbo::Affine::new([
-                            t.a as f64, t.b as f64,
-                            t.c as f64, t.d as f64,
-                            t.tx as f64, t.ty as f64,
+                            t.a as f64,
+                            t.b as f64,
+                            t.c as f64,
+                            t.d as f64,
+                            t.tx as f64,
+                            t.ty as f64,
                         ]);
                         child_path.apply_affine(affine);
                         paths.push(child_path);
@@ -710,25 +829,58 @@ fn resolve_paint(paint: &Paint) -> Option<ResolvedPaint> {
     match paint {
         Paint::Solid { color } => Some(ResolvedPaint::Solid(color.value())),
         Paint::LinearGradient { stops, start, end } => Some(ResolvedPaint::LinearGradient {
-            stops: stops.iter().map(|s| ResolvedGradientStop {
-                position: s.position,
-                color: s.color.value(),
-            }).collect(),
+            stops: stops
+                .iter()
+                .map(|s| ResolvedGradientStop {
+                    position: s.position,
+                    color: s.color.value(),
+                })
+                .collect(),
             start: kurbo::Point::new(start.x as f64, start.y as f64),
             end: kurbo::Point::new(end.x as f64, end.y as f64),
         }),
-        Paint::RadialGradient { stops, center, radius } => Some(ResolvedPaint::RadialGradient {
-            stops: stops.iter().map(|s| ResolvedGradientStop { position: s.position, color: s.color.value() }).collect(),
+        Paint::RadialGradient {
+            stops,
+            center,
+            radius,
+        } => Some(ResolvedPaint::RadialGradient {
+            stops: stops
+                .iter()
+                .map(|s| ResolvedGradientStop {
+                    position: s.position,
+                    color: s.color.value(),
+                })
+                .collect(),
             center: kurbo::Point::new(center.x as f64, center.y as f64),
             radius: kurbo::Point::new(radius.x as f64, radius.y as f64),
         }),
-        Paint::AngularGradient { stops, center, angle } => Some(ResolvedPaint::AngularGradient {
-            stops: stops.iter().map(|s| ResolvedGradientStop { position: s.position, color: s.color.value() }).collect(),
+        Paint::AngularGradient {
+            stops,
+            center,
+            angle,
+        } => Some(ResolvedPaint::AngularGradient {
+            stops: stops
+                .iter()
+                .map(|s| ResolvedGradientStop {
+                    position: s.position,
+                    color: s.color.value(),
+                })
+                .collect(),
             center: kurbo::Point::new(center.x as f64, center.y as f64),
             angle: *angle,
         }),
-        Paint::DiamondGradient { stops, center, radius } => Some(ResolvedPaint::DiamondGradient {
-            stops: stops.iter().map(|s| ResolvedGradientStop { position: s.position, color: s.color.value() }).collect(),
+        Paint::DiamondGradient {
+            stops,
+            center,
+            radius,
+        } => Some(ResolvedPaint::DiamondGradient {
+            stops: stops
+                .iter()
+                .map(|s| ResolvedGradientStop {
+                    position: s.position,
+                    color: s.color.value(),
+                })
+                .collect(),
             center: kurbo::Point::new(center.x as f64, center.y as f64),
             radius: kurbo::Point::new(radius.x as f64, radius.y as f64),
         }),
@@ -741,17 +893,24 @@ fn resolve_paint(paint: &Paint) -> Option<ResolvedPaint> {
 mod tests {
     use super::*;
     use kurbo::Shape;
+    use ode_format::color::Color;
     use ode_format::document::Document;
     use ode_format::node::{Node, NodeKind};
-    use ode_format::style::{Fill, BlendMode, Paint, StyleValue};
-    use ode_format::color::Color;
+    use ode_format::style::{BlendMode, Fill, Paint, StyleValue};
 
     fn make_simple_doc() -> Document {
         let mut doc = Document::new("Test");
         let mut frame = Node::new_frame("Root", 100.0, 80.0);
         if let NodeKind::Frame(ref mut data) = frame.kind {
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(Color::Srgb {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -773,7 +932,11 @@ mod tests {
         assert!((scene.width - 100.0).abs() < f32::EPSILON);
         assert!((scene.height - 80.0).abs() < f32::EPSILON);
         // Should have: PushLayer, FillPath (red fill), PopLayer
-        assert!(scene.commands.len() >= 3, "Expected at least 3 commands, got {}", scene.commands.len());
+        assert!(
+            scene.commands.len() >= 3,
+            "Expected at least 3 commands, got {}",
+            scene.commands.len()
+        );
     }
 
     #[test]
@@ -795,7 +958,11 @@ mod tests {
         let fid = doc.nodes.insert(frame);
         doc.canvas.push(fid);
         let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
-        let fill_count = scene.commands.iter().filter(|c| matches!(c, RenderCommand::FillPath { .. })).count();
+        let fill_count = scene
+            .commands
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::FillPath { .. }))
+            .count();
         assert!(fill_count <= 1, "Group should not produce FillPath");
     }
 
@@ -814,16 +981,23 @@ mod tests {
         // With empty font db, text should be silently skipped
         let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
         // Should have commands for the frame but no FillPath for text glyphs
-        let fill_count = scene.commands.iter()
+        let fill_count = scene
+            .commands
+            .iter()
             .filter(|c| matches!(c, RenderCommand::FillPath { .. }))
             .count();
-        assert!(fill_count <= 1, "Text with no fonts should produce no glyph fills");
+        assert!(
+            fill_count <= 1,
+            "Text with no fonts should produce no glyph fills"
+        );
     }
 
     #[test]
     fn auto_layout_document_produces_scene() {
-        use ode_format::node::{LayoutConfig, LayoutDirection, LayoutPadding, LayoutWrap,
-            PrimaryAxisAlign, CounterAxisAlign};
+        use ode_format::node::{
+            CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding, LayoutWrap,
+            PrimaryAxisAlign,
+        };
 
         let mut doc = Document::new("Auto Layout Test");
 
@@ -839,7 +1013,14 @@ mod tests {
                 wrap: LayoutWrap::NoWrap,
             });
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(Color::Srgb { r: 0.9, g: 0.9, b: 0.9, a: 1.0 }) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(Color::Srgb {
+                        r: 0.9,
+                        g: 0.9,
+                        b: 0.9,
+                        a: 1.0,
+                    }),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -850,7 +1031,14 @@ mod tests {
         let mut child1 = Node::new_frame("C1", 50.0, 50.0);
         if let NodeKind::Frame(ref mut data) = child1.kind {
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(Color::Srgb {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -859,7 +1047,14 @@ mod tests {
         let mut child2 = Node::new_frame("C2", 80.0, 50.0);
         if let NodeKind::Frame(ref mut data) = child2.kind {
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(Color::Srgb { r: 0.0, g: 0.0, b: 1.0, a: 1.0 }) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(Color::Srgb {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    }),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -884,10 +1079,16 @@ mod tests {
         // Should have: parent PushLayer + FillPath + child1 (PushLayer + FillPath + PopLayer) +
         //              child2 (PushLayer + FillPath + PopLayer) + parent PopLayer
         // That's at least 8 commands
-        assert!(scene.commands.len() >= 8, "Expected ≥8 commands, got {}", scene.commands.len());
+        assert!(
+            scene.commands.len() >= 8,
+            "Expected ≥8 commands, got {}",
+            scene.commands.len()
+        );
 
         // Verify transforms — child2 should be offset by child1.width + gap = 50 + 10 = 60
-        let push_layers: Vec<_> = scene.commands.iter()
+        let push_layers: Vec<_> = scene
+            .commands
+            .iter()
             .filter_map(|c| match c {
                 RenderCommand::PushLayer { transform, .. } => Some(transform),
                 _ => None,
@@ -895,7 +1096,11 @@ mod tests {
             .collect();
 
         // push_layers[0] = parent, push_layers[1] = child1, push_layers[2] = child2
-        assert!(push_layers.len() >= 3, "Expected ≥3 PushLayers, got {}", push_layers.len());
+        assert!(
+            push_layers.len() >= 3,
+            "Expected ≥3 PushLayers, got {}",
+            push_layers.len()
+        );
     }
 
     #[test]
@@ -924,7 +1129,9 @@ mod tests {
                 description: "A button component".to_string(),
             });
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(comp_fill_color) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(comp_fill_color),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -949,29 +1156,52 @@ mod tests {
 
     #[test]
     fn instance_renders_component_visuals() {
-        let red = Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
+        let red = Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
         let (doc, _) = make_component_instance_doc(red);
         let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
 
         // The component frame itself generates 1 FillPath (red)
         // The instance should ALSO generate 1 FillPath (red, from component expansion)
         // Plus the container frame (no fills)
-        let fill_count = scene.commands.iter()
+        let fill_count = scene
+            .commands
+            .iter()
             .filter(|c| matches!(c, RenderCommand::FillPath { .. }))
             .count();
-        assert_eq!(fill_count, 2, "Component + instance should each produce a FillPath, got {}", fill_count);
+        assert_eq!(
+            fill_count, 2,
+            "Component + instance should each produce a FillPath, got {}",
+            fill_count
+        );
     }
 
     #[test]
     fn instance_with_fill_override() {
         use ode_format::node::Override as Ov;
 
-        let red = Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
-        let blue = Color::Srgb { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
+        let red = Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let blue = Color::Srgb {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 1.0,
+        };
         let (mut doc, comp_stable_id) = make_component_instance_doc(red.clone());
 
         // Find and modify the instance to add a fill override
-        let inst_id = doc.nodes.iter()
+        let inst_id = doc
+            .nodes
+            .iter()
             .find(|(_, n)| matches!(&n.kind, NodeKind::Instance(_)))
             .map(|(id, _)| id)
             .unwrap();
@@ -979,7 +1209,9 @@ mod tests {
             data.overrides.push(Ov::Fills {
                 target: comp_stable_id,
                 fills: vec![Fill {
-                    paint: Paint::Solid { color: StyleValue::Raw(blue.clone()) },
+                    paint: Paint::Solid {
+                        color: StyleValue::Raw(blue.clone()),
+                    },
                     opacity: StyleValue::Raw(1.0),
                     blend_mode: BlendMode::Normal,
                     visible: true,
@@ -990,7 +1222,9 @@ mod tests {
         let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
 
         // Verify we get 2 FillPaths total
-        let fills: Vec<_> = scene.commands.iter()
+        let fills: Vec<_> = scene
+            .commands
+            .iter()
             .filter_map(|c| match c {
                 RenderCommand::FillPath { paint, .. } => Some(paint),
                 _ => None,
@@ -999,8 +1233,12 @@ mod tests {
         assert_eq!(fills.len(), 2);
 
         // One should be red (component itself) and one blue (instance with override)
-        let has_red = fills.iter().any(|p| matches!(p, ResolvedPaint::Solid(c) if *c == red));
-        let has_blue = fills.iter().any(|p| matches!(p, ResolvedPaint::Solid(c) if *c == blue));
+        let has_red = fills
+            .iter()
+            .any(|p| matches!(p, ResolvedPaint::Solid(c) if *c == red));
+        let has_blue = fills
+            .iter()
+            .any(|p| matches!(p, ResolvedPaint::Solid(c) if *c == blue));
         assert!(has_red, "Component should render with red fill");
         assert!(has_blue, "Instance should render with blue fill override");
     }
@@ -1010,15 +1248,27 @@ mod tests {
         use ode_format::node::{ComponentDef, Override as Ov};
 
         let mut doc = Document::new("Visibility Test");
-        let red = Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
-        let green = Color::Srgb { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
+        let red = Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let green = Color::Srgb {
+            r: 0.0,
+            g: 1.0,
+            b: 0.0,
+            a: 1.0,
+        };
 
         // Component with a child
         let mut child_node = Node::new_frame("Inner", 40.0, 20.0);
         let child_stable_id = child_node.stable_id.clone();
         if let NodeKind::Frame(ref mut data) = child_node.kind {
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(green) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(green),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -1034,7 +1284,9 @@ mod tests {
                 description: "".to_string(),
             });
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(red) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(red),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -1062,7 +1314,9 @@ mod tests {
 
         let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
 
-        let fills: Vec<_> = scene.commands.iter()
+        let fills: Vec<_> = scene
+            .commands
+            .iter()
             .filter_map(|c| match c {
                 RenderCommand::FillPath { paint, .. } => Some(paint),
                 _ => None,
@@ -1072,8 +1326,12 @@ mod tests {
         // Component renders: red (comp root) + green (child) = 2
         // Instance renders: red (comp root via instance) + hidden child = 1
         // Total = 3
-        assert_eq!(fills.len(), 3,
-            "Expected 3 fills (comp root + child + instance root, child hidden), got {}", fills.len());
+        assert_eq!(
+            fills.len(),
+            3,
+            "Expected 3 fills (comp root + child + instance root, child hidden), got {}",
+            fills.len()
+        );
     }
 
     #[test]
@@ -1093,10 +1351,15 @@ mod tests {
 
         // Should not panic, should produce no fills from the instance
         let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
-        let fill_count = scene.commands.iter()
+        let fill_count = scene
+            .commands
+            .iter()
             .filter(|c| matches!(c, RenderCommand::FillPath { .. }))
             .count();
-        assert_eq!(fill_count, 0, "Missing component instance should produce no fills");
+        assert_eq!(
+            fill_count, 0,
+            "Missing component instance should produce no fills"
+        );
     }
 
     #[test]
@@ -1104,8 +1367,18 @@ mod tests {
         use ode_format::node::ComponentDef;
 
         let mut doc = Document::new("Nested Instances");
-        let red = Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
-        let blue = Color::Srgb { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
+        let red = Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let blue = Color::Srgb {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 1.0,
+        };
 
         // Inner component: blue fill
         let mut inner_comp = Node::new_frame("InnerComp", 30.0, 30.0);
@@ -1116,7 +1389,9 @@ mod tests {
                 description: "".to_string(),
             });
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(blue) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(blue),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -1136,7 +1411,9 @@ mod tests {
                 description: "".to_string(),
             });
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(red) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(red),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -1158,7 +1435,9 @@ mod tests {
 
         let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
 
-        let fills: Vec<_> = scene.commands.iter()
+        let fills: Vec<_> = scene
+            .commands
+            .iter()
             .filter_map(|c| match c {
                 RenderCommand::FillPath { paint, .. } => Some(paint),
                 _ => None,
@@ -1169,8 +1448,12 @@ mod tests {
         // outer_comp: 1 red fill + inner_instance expands to 1 blue fill = 2
         // outer_instance: expands outer_comp: 1 red + nested inner_instance: 1 blue = 2
         // Total = 5
-        assert_eq!(fills.len(), 5,
-            "Expected 5 fills from nested components + instances, got {}", fills.len());
+        assert_eq!(
+            fills.len(),
+            5,
+            "Expected 5 fills from nested components + instances, got {}",
+            fills.len()
+        );
     }
 
     #[test]
@@ -1243,14 +1526,21 @@ mod tests {
         use ode_format::node::{ComponentDef, Override as Ov};
 
         let mut doc = Document::new("Size Override Test");
-        let red = Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
+        let red = Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
 
         // Component child: 80×40 frame with a fill
         let mut child_node = Node::new_frame("Inner", 80.0, 40.0);
         let child_stable_id = child_node.stable_id.clone();
         if let NodeKind::Frame(ref mut data) = child_node.kind {
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(red.clone()) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(red.clone()),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -1291,9 +1581,13 @@ mod tests {
         let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
 
         // Find clip paths from PushLayer commands — the overridden child should have 120×60 clip
-        let clips: Vec<_> = scene.commands.iter()
+        let clips: Vec<_> = scene
+            .commands
+            .iter()
             .filter_map(|c| match c {
-                RenderCommand::PushLayer { clip: Some(clip), .. } => Some(clip.bounding_box()),
+                RenderCommand::PushLayer {
+                    clip: Some(clip), ..
+                } => Some(clip.bounding_box()),
                 _ => None,
             })
             .collect();
@@ -1304,19 +1598,29 @@ mod tests {
             let h = bb.y1 - bb.y0;
             (w - 120.0).abs() < 1.0 && (h - 60.0).abs() < 1.0
         });
-        assert!(has_overridden_size,
-            "Expected a clip with 120×60 from size override, got clips: {:?}", clips);
+        assert!(
+            has_overridden_size,
+            "Expected a clip with 120×60 from size override, got clips: {:?}",
+            clips
+        );
     }
 
     #[test]
     fn instance_visible_override_on_root_hides_instance() {
         use ode_format::node::Override as Ov;
 
-        let red = Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
+        let red = Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
         let (mut doc, comp_stable_id) = make_component_instance_doc(red);
 
         // Add Visible override on the component root to hide the instance
-        let inst_id = doc.nodes.iter()
+        let inst_id = doc
+            .nodes
+            .iter()
             .find(|(_, n)| matches!(&n.kind, NodeKind::Instance(_)))
             .map(|(id, _)| id)
             .unwrap();
@@ -1329,31 +1633,50 @@ mod tests {
 
         let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
 
-        let fill_count = scene.commands.iter()
+        let fill_count = scene
+            .commands
+            .iter()
             .filter(|c| matches!(c, RenderCommand::FillPath { .. }))
             .count();
 
         // Component definition itself renders 1 FillPath (red)
         // Instance with visible=false on root should render 0 FillPaths
         // Total = 1
-        assert_eq!(fill_count, 1,
-            "Only the component definition should produce a fill (instance hidden), got {}", fill_count);
+        assert_eq!(
+            fill_count, 1,
+            "Only the component definition should produce a fill (instance hidden), got {}",
+            fill_count
+        );
     }
 
     #[test]
     fn instance_expands_auto_layout_component_children() {
-        use ode_format::node::{ComponentDef, LayoutConfig, LayoutDirection, LayoutPadding,
-            LayoutWrap, PrimaryAxisAlign, CounterAxisAlign};
+        use ode_format::node::{
+            ComponentDef, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding,
+            LayoutWrap, PrimaryAxisAlign,
+        };
 
         let mut doc = Document::new("Auto Layout Component Test");
-        let red = Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
-        let blue = Color::Srgb { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
+        let red = Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let blue = Color::Srgb {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 1.0,
+        };
 
         // Two children 50×50 each
         let mut child1 = Node::new_frame("C1", 50.0, 50.0);
         if let NodeKind::Frame(ref mut data) = child1.kind {
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(red.clone()) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(red.clone()),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -1364,7 +1687,9 @@ mod tests {
         let mut child2 = Node::new_frame("C2", 50.0, 50.0);
         if let NodeKind::Frame(ref mut data) = child2.kind {
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(blue.clone()) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(blue.clone()),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -1405,14 +1730,19 @@ mod tests {
 
         let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
 
-        let fill_count = scene.commands.iter()
+        let fill_count = scene
+            .commands
+            .iter()
             .filter(|c| matches!(c, RenderCommand::FillPath { .. }))
             .count();
 
         // Component renders its 2 children: 2 FillPaths
         // Instance expands the same component, rendering 2 more FillPaths
         // Total = 4
-        assert_eq!(fill_count, 4,
-            "Component + instance should each render 2 children fills, got {}", fill_count);
+        assert_eq!(
+            fill_count, 4,
+            "Component + instance should each render 2 children fills, got {}",
+            fill_count
+        );
     }
 }

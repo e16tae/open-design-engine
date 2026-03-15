@@ -8,7 +8,7 @@ pub mod path;
 pub mod render;
 pub mod scene;
 
-pub use scene::{Scene, RenderCommand, ResolvedPaint, ResolvedEffect};
 pub use layout::{LayoutMap, LayoutRect};
-pub use render::Renderer;
 pub use ode_text::FontDatabase;
+pub use render::Renderer;
+pub use scene::{RenderCommand, ResolvedEffect, ResolvedPaint, Scene};

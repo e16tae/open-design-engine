@@ -1,9 +1,9 @@
-use crate::error::RenderError;
-use crate::scene::*;
 use crate::blend;
-use crate::paint;
 use crate::effects;
+use crate::error::RenderError;
+use crate::paint;
 use crate::path;
+use crate::scene::*;
 
 /// Stateless renderer: converts a Scene into a Pixmap.
 pub struct Renderer;
@@ -19,9 +19,15 @@ impl Renderer {
         let w = scene.width.ceil() as u32;
         let h = scene.height.ceil() as u32;
         if w == 0 || h == 0 {
-            return Err(RenderError::PixmapCreationFailed { width: w, height: h });
+            return Err(RenderError::PixmapCreationFailed {
+                width: w,
+                height: h,
+            });
         }
-        let root = tiny_skia::Pixmap::new(w, h).ok_or(RenderError::PixmapCreationFailed { width: w, height: h })?;
+        let root = tiny_skia::Pixmap::new(w, h).ok_or(RenderError::PixmapCreationFailed {
+            width: w,
+            height: h,
+        })?;
 
         let mut stack: Vec<LayerEntry> = vec![LayerEntry {
             pixmap: root,
@@ -31,9 +37,17 @@ impl Renderer {
 
         for cmd in &scene.commands {
             match cmd {
-                RenderCommand::PushLayer { opacity, blend_mode, clip, transform } => {
-                    let layer_pixmap = tiny_skia::Pixmap::new(w, h)
-                        .ok_or(RenderError::PixmapCreationFailed { width: w, height: h })?;
+                RenderCommand::PushLayer {
+                    opacity,
+                    blend_mode,
+                    clip,
+                    transform,
+                } => {
+                    let layer_pixmap =
+                        tiny_skia::Pixmap::new(w, h).ok_or(RenderError::PixmapCreationFailed {
+                            width: w,
+                            height: h,
+                        })?;
                     let mask = clip.as_ref().and_then(|clip_path| {
                         let mut m = tiny_skia::Mask::new(w, h)?;
                         if let Some(skia_path) = path::bezpath_to_skia(clip_path) {
@@ -46,21 +60,33 @@ impl Renderer {
                         blend_mode: blend::to_skia_blend(*blend_mode),
                         quality: tiny_skia::FilterQuality::Nearest,
                     };
-                    stack.push(LayerEntry { pixmap: layer_pixmap, mask, paint });
+                    stack.push(LayerEntry {
+                        pixmap: layer_pixmap,
+                        mask,
+                        paint,
+                    });
                 }
                 RenderCommand::PopLayer => {
-                    if stack.len() <= 1 { continue; }
+                    if stack.len() <= 1 {
+                        continue;
+                    }
                     let entry = stack.pop().unwrap();
                     let parent = stack.last_mut().unwrap();
                     parent.pixmap.draw_pixmap(
-                        0, 0,
+                        0,
+                        0,
                         entry.pixmap.as_ref(),
                         &entry.paint,
                         tiny_skia::Transform::identity(),
                         entry.mask.as_ref(),
                     );
                 }
-                RenderCommand::FillPath { path: bp, paint: resolved_paint, fill_rule, transform } => {
+                RenderCommand::FillPath {
+                    path: bp,
+                    paint: resolved_paint,
+                    fill_rule,
+                    transform,
+                } => {
                     let current = stack.last_mut().unwrap();
                     if let Some(skia_path) = path::bezpath_to_skia(bp) {
                         let skia_fill_rule = blend::to_skia_fill_rule(*fill_rule);
@@ -74,15 +100,24 @@ impl Renderer {
                         );
                     }
                 }
-                RenderCommand::StrokePath { path: bp, paint: resolved_paint, stroke, transform } => {
+                RenderCommand::StrokePath {
+                    path: bp,
+                    paint: resolved_paint,
+                    stroke,
+                    transform,
+                } => {
                     let current = stack.last_mut().unwrap();
                     if let Some(skia_path) = path::bezpath_to_skia(bp) {
                         let skia_stroke = to_skia_stroke(stroke);
                         match stroke.position {
                             ode_format::style::StrokePosition::Center => {
                                 paint::stroke_with_paint(
-                                    &mut current.pixmap, &skia_path, resolved_paint,
-                                    &skia_stroke, *transform, None,
+                                    &mut current.pixmap,
+                                    &skia_path,
+                                    resolved_paint,
+                                    &skia_stroke,
+                                    *transform,
+                                    None,
                                 );
                             }
                             ode_format::style::StrokePosition::Inside => {
@@ -90,8 +125,12 @@ impl Renderer {
                                 wide_stroke.width *= 2.0;
                                 let mask = build_fill_mask(&skia_path, w, h);
                                 paint::stroke_with_paint(
-                                    &mut current.pixmap, &skia_path, resolved_paint,
-                                    &wide_stroke, *transform, mask.as_ref(),
+                                    &mut current.pixmap,
+                                    &skia_path,
+                                    resolved_paint,
+                                    &wide_stroke,
+                                    *transform,
+                                    mask.as_ref(),
                                 );
                             }
                             ode_format::style::StrokePosition::Outside => {
@@ -99,74 +138,136 @@ impl Renderer {
                                 wide_stroke.width *= 2.0;
                                 let mask = build_inverted_fill_mask(&skia_path, w, h);
                                 paint::stroke_with_paint(
-                                    &mut current.pixmap, &skia_path, resolved_paint,
-                                    &wide_stroke, *transform, mask.as_ref(),
+                                    &mut current.pixmap,
+                                    &skia_path,
+                                    resolved_paint,
+                                    &wide_stroke,
+                                    *transform,
+                                    mask.as_ref(),
                                 );
                             }
                         }
                     }
                 }
-                RenderCommand::ApplyEffect { effect } => {
-                    match effect {
-                        ResolvedEffect::DropShadow { color, offset_x, offset_y, blur_radius, spread, shape } => {
-                            if let Some(skia_shape) = path::bezpath_to_skia(shape) {
-                                if let Some(shadow) = effects::render_drop_shadow(
-                                    &skia_shape, color, *offset_x, *offset_y, *blur_radius, *spread, w, h,
-                                ) {
-                                    let current = stack.last_mut().unwrap();
-                                    let content = current.pixmap.clone();
-                                    current.pixmap.fill(tiny_skia::Color::TRANSPARENT);
-                                    let paint = tiny_skia::PixmapPaint {
-                                        opacity: 1.0,
-                                        blend_mode: tiny_skia::BlendMode::SourceOver,
-                                        quality: tiny_skia::FilterQuality::Nearest,
-                                    };
-                                    current.pixmap.draw_pixmap(0, 0, shadow.as_ref(), &paint, tiny_skia::Transform::identity(), None);
-                                    current.pixmap.draw_pixmap(0, 0, content.as_ref(), &paint, tiny_skia::Transform::identity(), None);
-                                }
-                            }
-                        }
-                        ResolvedEffect::InnerShadow { color, offset_x, offset_y, blur_radius, spread, shape } => {
-                            if let Some(skia_shape) = path::bezpath_to_skia(shape) {
-                                if let Some(shadow) = effects::render_inner_shadow(
-                                    &skia_shape, color, *offset_x, *offset_y, *blur_radius, *spread, w, h,
-                                ) {
-                                    let current = stack.last_mut().unwrap();
-                                    let paint = tiny_skia::PixmapPaint {
-                                        opacity: 1.0,
-                                        blend_mode: tiny_skia::BlendMode::SourceOver,
-                                        quality: tiny_skia::FilterQuality::Nearest,
-                                    };
-                                    current.pixmap.draw_pixmap(0, 0, shadow.as_ref(), &paint, tiny_skia::Transform::identity(), None);
-                                }
-                            }
-                        }
-                        ResolvedEffect::LayerBlur { radius } => {
-                            let current = stack.last_mut().unwrap();
-                            effects::apply_layer_blur(&mut current.pixmap, *radius);
-                        }
-                        ResolvedEffect::BackgroundBlur { radius } => {
-                            if stack.len() >= 2 {
-                                let parent_idx = stack.len() - 2;
-                                let rect_path = tiny_skia::PathBuilder::from_rect(
-                                    tiny_skia::Rect::from_xywh(0.0, 0.0, w as f32, h as f32).unwrap()
+                RenderCommand::ApplyEffect { effect } => match effect {
+                    ResolvedEffect::DropShadow {
+                        color,
+                        offset_x,
+                        offset_y,
+                        blur_radius,
+                        spread,
+                        shape,
+                    } => {
+                        if let Some(skia_shape) = path::bezpath_to_skia(shape) {
+                            if let Some(shadow) = effects::render_drop_shadow(
+                                &skia_shape,
+                                color,
+                                *offset_x,
+                                *offset_y,
+                                *blur_radius,
+                                *spread,
+                                w,
+                                h,
+                            ) {
+                                let current = stack.last_mut().unwrap();
+                                let content = current.pixmap.clone();
+                                current.pixmap.fill(tiny_skia::Color::TRANSPARENT);
+                                let paint = tiny_skia::PixmapPaint {
+                                    opacity: 1.0,
+                                    blend_mode: tiny_skia::BlendMode::SourceOver,
+                                    quality: tiny_skia::FilterQuality::Nearest,
+                                };
+                                current.pixmap.draw_pixmap(
+                                    0,
+                                    0,
+                                    shadow.as_ref(),
+                                    &paint,
+                                    tiny_skia::Transform::identity(),
+                                    None,
                                 );
-                                let blurred_bg = effects::render_background_blur(
-                                    &stack[parent_idx].pixmap, &rect_path, *radius, w, h,
+                                current.pixmap.draw_pixmap(
+                                    0,
+                                    0,
+                                    content.as_ref(),
+                                    &paint,
+                                    tiny_skia::Transform::identity(),
+                                    None,
                                 );
-                                if let Some(blurred_bg) = blurred_bg {
-                                    let current = stack.last_mut().unwrap();
-                                    let paint = tiny_skia::PixmapPaint {
-                                        opacity: 1.0,
-                                        blend_mode: tiny_skia::BlendMode::DestinationOver,
-                                        quality: tiny_skia::FilterQuality::Nearest,
-                                    };
-                                    current.pixmap.draw_pixmap(0, 0, blurred_bg.as_ref(), &paint, tiny_skia::Transform::identity(), None);
-                                }
                             }
                         }
                     }
-                }
+                    ResolvedEffect::InnerShadow {
+                        color,
+                        offset_x,
+                        offset_y,
+                        blur_radius,
+                        spread,
+                        shape,
+                    } => {
+                        if let Some(skia_shape) = path::bezpath_to_skia(shape) {
+                            if let Some(shadow) = effects::render_inner_shadow(
+                                &skia_shape,
+                                color,
+                                *offset_x,
+                                *offset_y,
+                                *blur_radius,
+                                *spread,
+                                w,
+                                h,
+                            ) {
+                                let current = stack.last_mut().unwrap();
+                                let paint = tiny_skia::PixmapPaint {
+                                    opacity: 1.0,
+                                    blend_mode: tiny_skia::BlendMode::SourceOver,
+                                    quality: tiny_skia::FilterQuality::Nearest,
+                                };
+                                current.pixmap.draw_pixmap(
+                                    0,
+                                    0,
+                                    shadow.as_ref(),
+                                    &paint,
+                                    tiny_skia::Transform::identity(),
+                                    None,
+                                );
+                            }
+                        }
+                    }
+                    ResolvedEffect::LayerBlur { radius } => {
+                        let current = stack.last_mut().unwrap();
+                        effects::apply_layer_blur(&mut current.pixmap, *radius);
+                    }
+                    ResolvedEffect::BackgroundBlur { radius } => {
+                        if stack.len() >= 2 {
+                            let parent_idx = stack.len() - 2;
+                            let rect_path = tiny_skia::PathBuilder::from_rect(
+                                tiny_skia::Rect::from_xywh(0.0, 0.0, w as f32, h as f32).unwrap(),
+                            );
+                            let blurred_bg = effects::render_background_blur(
+                                &stack[parent_idx].pixmap,
+                                &rect_path,
+                                *radius,
+                                w,
+                                h,
+                            );
+                            if let Some(blurred_bg) = blurred_bg {
+                                let current = stack.last_mut().unwrap();
+                                let paint = tiny_skia::PixmapPaint {
+                                    opacity: 1.0,
+                                    blend_mode: tiny_skia::BlendMode::DestinationOver,
+                                    quality: tiny_skia::FilterQuality::Nearest,
+                                };
+                                current.pixmap.draw_pixmap(
+                                    0,
+                                    0,
+                                    blurred_bg.as_ref(),
+                                    &paint,
+                                    tiny_skia::Transform::identity(),
+                                    None,
+                                );
+                            }
+                        }
+                    }
+                },
             }
         }
 
@@ -203,13 +304,23 @@ fn to_skia_stroke(style: &StrokeStyle) -> tiny_skia::Stroke {
 
 fn build_fill_mask(path: &tiny_skia::Path, w: u32, h: u32) -> Option<tiny_skia::Mask> {
     let mut mask = tiny_skia::Mask::new(w, h)?;
-    mask.fill_path(path, tiny_skia::FillRule::Winding, true, tiny_skia::Transform::identity());
+    mask.fill_path(
+        path,
+        tiny_skia::FillRule::Winding,
+        true,
+        tiny_skia::Transform::identity(),
+    );
     Some(mask)
 }
 
 fn build_inverted_fill_mask(path: &tiny_skia::Path, w: u32, h: u32) -> Option<tiny_skia::Mask> {
     let mut mask = tiny_skia::Mask::new(w, h)?;
-    mask.fill_path(path, tiny_skia::FillRule::Winding, true, tiny_skia::Transform::identity());
+    mask.fill_path(
+        path,
+        tiny_skia::FillRule::Winding,
+        true,
+        tiny_skia::Transform::identity(),
+    );
     for byte in mask.data_mut() {
         *byte = 255 - *byte;
     }
@@ -243,7 +354,12 @@ mod tests {
                 },
                 RenderCommand::FillPath {
                     path: bp,
-                    paint: ResolvedPaint::Solid(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }),
+                    paint: ResolvedPaint::Solid(Color::Srgb {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
                     fill_rule: FillRule::NonZero,
                     transform: tiny_skia::Transform::identity(),
                 },
@@ -286,7 +402,12 @@ mod tests {
                 },
                 RenderCommand::FillPath {
                     path: bp,
-                    paint: ResolvedPaint::Solid(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }),
+                    paint: ResolvedPaint::Solid(Color::Srgb {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
                     fill_rule: FillRule::NonZero,
                     transform: tiny_skia::Transform::identity(),
                 },
@@ -295,13 +416,20 @@ mod tests {
         };
         let pixmap = Renderer::render(&scene).unwrap();
         let center = pixmap.pixel(25, 25).unwrap();
-        assert!(center.alpha() > 100 && center.alpha() < 160,
-            "Expected ~128 alpha, got {}", center.alpha());
+        assert!(
+            center.alpha() > 100 && center.alpha() < 160,
+            "Expected ~128 alpha, got {}",
+            center.alpha()
+        );
     }
 
     #[test]
     fn empty_scene_error() {
-        let scene = Scene { width: 0.0, height: 0.0, commands: vec![] };
+        let scene = Scene {
+            width: 0.0,
+            height: 0.0,
+            commands: vec![],
+        };
         assert!(Renderer::render(&scene).is_err());
     }
 }

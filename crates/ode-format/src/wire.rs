@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::document::{Document, Version, View, ViewId, ViewKind, WorkingColorSpace};
 use crate::node::{
-    BooleanOpData, BooleanOperation, ComponentDef, Constraints, FrameData, GroupData,
-    ImageData, InstanceData, LayoutConfig, LayoutSizing, Node, NodeId, NodeKind, NodeTree,
-    Override, SizingMode, StableId, TextData, Transform, VectorData,
+    BooleanOpData, BooleanOperation, ComponentDef, Constraints, FrameData, GroupData, ImageData,
+    InstanceData, LayoutConfig, LayoutSizing, Node, NodeId, NodeKind, NodeTree, Override,
+    SizingMode, StableId, TextData, Transform, VectorData,
 };
 use crate::style::{BlendMode, VisualProps};
 use crate::tokens::DesignTokens;
-use crate::typography::{TextRun, TextStyle, TextSizingMode};
+use crate::typography::{TextRun, TextSizingMode, TextStyle};
 
 // ─── Error ───
 
@@ -25,6 +25,14 @@ pub enum WireError {
 
 fn default_opacity() -> f32 {
     1.0
+}
+
+fn default_visible() -> bool {
+    true
+}
+
+fn default_clips_content() -> bool {
+    true
 }
 
 fn default_text_size() -> f32 {
@@ -58,6 +66,8 @@ pub struct NodeWire {
     pub opacity: f32,
     #[serde(default)]
     pub blend_mode: BlendMode,
+    #[serde(default = "default_visible")]
+    pub visible: bool,
     pub constraints: Option<Constraints>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout_sizing: Option<LayoutSizing>,
@@ -96,6 +106,8 @@ pub struct FrameDataWire {
     pub height_sizing: SizingMode,
     #[serde(default)]
     pub corner_radius: [f32; 4],
+    #[serde(default = "default_clips_content")]
+    pub clips_content: bool,
     #[serde(default)]
     pub visual: VisualProps,
     #[serde(default)]
@@ -228,6 +240,7 @@ impl DocumentWire {
                 transform: nw.transform,
                 opacity: nw.opacity,
                 blend_mode: nw.blend_mode,
+                visible: nw.visible,
                 constraints: nw.constraints,
                 layout_sizing: nw.layout_sizing.clone(),
                 // Placeholder kind — will be overwritten in pass 2
@@ -289,6 +302,7 @@ fn node_to_wire(node: &Node, resolve: &dyn Fn(&NodeId) -> String) -> NodeWire {
             width_sizing: d.width_sizing,
             height_sizing: d.height_sizing,
             corner_radius: d.corner_radius,
+            clips_content: d.clips_content,
             visual: d.visual.clone(),
             container: ContainerPropsWire {
                 children: d.container.children.iter().map(resolve).collect(),
@@ -335,6 +349,7 @@ fn node_to_wire(node: &Node, resolve: &dyn Fn(&NodeId) -> String) -> NodeWire {
         transform: node.transform,
         opacity: node.opacity,
         blend_mode: node.blend_mode,
+        visible: node.visible,
         constraints: node.constraints,
         layout_sizing: node.layout_sizing.clone(),
         kind,
@@ -359,6 +374,7 @@ fn wire_kind_to_runtime(
                 width_sizing: d.width_sizing,
                 height_sizing: d.height_sizing,
                 corner_radius: d.corner_radius,
+                clips_content: d.clips_content,
                 visual: d.visual.clone(),
                 container: crate::node::ContainerProps {
                     children,
@@ -508,7 +524,7 @@ impl<'de> Deserialize<'de> for Document {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::{ViewId, Version};
+    use crate::document::{Version, ViewId};
     use crate::node::Node;
 
     #[test]
@@ -523,6 +539,7 @@ mod tests {
                     transform: Transform::default(),
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
+                    visible: true,
                     constraints: None,
                     layout_sizing: None,
                     kind: NodeKindWire::Frame(FrameDataWire {
@@ -531,6 +548,7 @@ mod tests {
                         width_sizing: SizingMode::Fixed,
                         height_sizing: SizingMode::Fixed,
                         corner_radius: [0.0; 4],
+                        clips_content: true,
                         visual: VisualProps::default(),
                         container: ContainerPropsWire {
                             children: vec!["text-1".to_string()],
@@ -545,6 +563,7 @@ mod tests {
                     transform: Transform::default(),
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
+                    visible: true,
                     constraints: None,
                     layout_sizing: None,
                     kind: NodeKindWire::Text(TextDataWire {
@@ -688,6 +707,7 @@ mod tests {
                 transform: Transform::default(),
                 opacity: 1.0,
                 blend_mode: BlendMode::Normal,
+                visible: true,
                 constraints: None,
                 layout_sizing: None,
                 kind: NodeKindWire::Frame(FrameDataWire {
@@ -696,6 +716,7 @@ mod tests {
                     width_sizing: SizingMode::Fixed,
                     height_sizing: SizingMode::Fixed,
                     corner_radius: [0.0; 4],
+                    clips_content: true,
                     visual: VisualProps::default(),
                     container: ContainerPropsWire {
                         children: vec!["nonexistent".to_string()],

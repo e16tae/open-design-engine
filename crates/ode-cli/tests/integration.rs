@@ -20,8 +20,18 @@ fn new_creates_file() {
     let _ = std::fs::remove_file(&file);
 
     let output = ode_cmd()
-        .args(["new", file.to_str().unwrap(), "--name", "Test Doc", "--width", "100", "--height", "50"])
-        .output().unwrap();
+        .args([
+            "new",
+            file.to_str().unwrap(),
+            "--name",
+            "Test Doc",
+            "--width",
+            "100",
+            "--height",
+            "50",
+        ])
+        .output()
+        .unwrap();
 
     assert_eq!(output.status.code(), Some(0));
     let json = parse_json(&output);
@@ -29,9 +39,8 @@ fn new_creates_file() {
     assert!(file.exists());
 
     // Verify the created file is valid
-    let content: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(&file).unwrap()
-    ).unwrap();
+    let content: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(content["name"], "Test Doc");
     assert_eq!(content["canvas"].as_array().unwrap().len(), 1);
 
@@ -47,11 +56,15 @@ fn validate_valid_document() {
     let file = dir.join("valid.ode.json");
 
     // Create a valid document first
-    ode_cmd().args(["new", file.to_str().unwrap()]).output().unwrap();
+    ode_cmd()
+        .args(["new", file.to_str().unwrap()])
+        .output()
+        .unwrap();
 
     let output = ode_cmd()
         .args(["validate", file.to_str().unwrap()])
-        .output().unwrap();
+        .output()
+        .unwrap();
 
     assert_eq!(output.status.code(), Some(0));
     let json = parse_json(&output);
@@ -69,7 +82,8 @@ fn validate_invalid_json() {
 
     let output = ode_cmd()
         .args(["validate", file.to_str().unwrap()])
-        .output().unwrap();
+        .output()
+        .unwrap();
 
     assert_eq!(output.status.code(), Some(1));
     let json = parse_json(&output);
@@ -89,13 +103,29 @@ fn build_creates_png() {
     let png = dir.join("output.png");
 
     // Create a document with a colored frame
-    ode_cmd().args(["new", file.to_str().unwrap(), "--width", "64", "--height", "64"]).output().unwrap();
+    ode_cmd()
+        .args([
+            "new",
+            file.to_str().unwrap(),
+            "--width",
+            "64",
+            "--height",
+            "64",
+        ])
+        .output()
+        .unwrap();
 
     let output = ode_cmd()
         .args(["build", file.to_str().unwrap(), "-o", png.to_str().unwrap()])
-        .output().unwrap();
+        .output()
+        .unwrap();
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json = parse_json(&output);
     assert_eq!(json["status"], "ok");
     assert!(png.exists());
@@ -116,19 +146,39 @@ fn build_creates_svg_by_extension() {
     let file = dir.join("design.ode.json");
     let svg = dir.join("output.svg");
 
-    ode_cmd().args(["new", file.to_str().unwrap(), "--width", "64", "--height", "64"]).output().unwrap();
+    ode_cmd()
+        .args([
+            "new",
+            file.to_str().unwrap(),
+            "--width",
+            "64",
+            "--height",
+            "64",
+        ])
+        .output()
+        .unwrap();
 
     let output = ode_cmd()
         .args(["build", file.to_str().unwrap(), "-o", svg.to_str().unwrap()])
-        .output().unwrap();
+        .output()
+        .unwrap();
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json = parse_json(&output);
     assert_eq!(json["status"], "ok");
     assert!(svg.exists());
 
     let content = std::fs::read_to_string(&svg).unwrap();
-    assert!(content.starts_with("<?xml"), "Expected XML declaration, got: {}", &content[..50.min(content.len())]);
+    assert!(
+        content.starts_with("<?xml"),
+        "Expected XML declaration, got: {}",
+        &content[..50.min(content.len())]
+    );
     assert!(content.contains("<svg"));
 
     std::fs::remove_dir_all(&dir).ok();
@@ -141,13 +191,36 @@ fn build_creates_svg_by_format_flag() {
     let file = dir.join("design.ode.json");
     let out = dir.join("output.dat");
 
-    ode_cmd().args(["new", file.to_str().unwrap(), "--width", "32", "--height", "32"]).output().unwrap();
+    ode_cmd()
+        .args([
+            "new",
+            file.to_str().unwrap(),
+            "--width",
+            "32",
+            "--height",
+            "32",
+        ])
+        .output()
+        .unwrap();
 
     let output = ode_cmd()
-        .args(["build", file.to_str().unwrap(), "-o", out.to_str().unwrap(), "--format", "svg"])
-        .output().unwrap();
+        .args([
+            "build",
+            file.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--format",
+            "svg",
+        ])
+        .output()
+        .unwrap();
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(out.exists());
 
     let content = std::fs::read_to_string(&out).unwrap();
@@ -163,13 +236,34 @@ fn render_creates_svg() {
     let file = dir.join("design.ode.json");
     let svg = dir.join("render_out.svg");
 
-    ode_cmd().args(["new", file.to_str().unwrap(), "--width", "48", "--height", "48"]).output().unwrap();
+    ode_cmd()
+        .args([
+            "new",
+            file.to_str().unwrap(),
+            "--width",
+            "48",
+            "--height",
+            "48",
+        ])
+        .output()
+        .unwrap();
 
     let output = ode_cmd()
-        .args(["render", file.to_str().unwrap(), "-o", svg.to_str().unwrap()])
-        .output().unwrap();
+        .args([
+            "render",
+            file.to_str().unwrap(),
+            "-o",
+            svg.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(svg.exists());
 
     let content = std::fs::read_to_string(&svg).unwrap();
@@ -186,11 +280,24 @@ fn inspect_shows_tree() {
     std::fs::create_dir_all(&dir).ok();
     let file = dir.join("doc.ode.json");
 
-    ode_cmd().args(["new", file.to_str().unwrap(), "--name", "Inspect Me", "--width", "100", "--height", "50"]).output().unwrap();
+    ode_cmd()
+        .args([
+            "new",
+            file.to_str().unwrap(),
+            "--name",
+            "Inspect Me",
+            "--width",
+            "100",
+            "--height",
+            "50",
+        ])
+        .output()
+        .unwrap();
 
     let output = ode_cmd()
         .args(["inspect", file.to_str().unwrap()])
-        .output().unwrap();
+        .output()
+        .unwrap();
 
     assert_eq!(output.status.code(), Some(0));
     let json = parse_json(&output);
@@ -205,22 +312,21 @@ fn inspect_shows_tree() {
 
 #[test]
 fn schema_outputs_valid_json_schema() {
-    let output = ode_cmd()
-        .args(["schema"])
-        .output().unwrap();
+    let output = ode_cmd().args(["schema"]).output().unwrap();
 
     assert_eq!(output.status.code(), Some(0));
     let json = parse_json(&output);
     // JSON Schema should have a title or $schema field
-    assert!(json.get("title").is_some() || json.get("$schema").is_some() || json.get("type").is_some(),
-        "Expected JSON Schema, got: {}", serde_json::to_string_pretty(&json).unwrap());
+    assert!(
+        json.get("title").is_some() || json.get("$schema").is_some() || json.get("type").is_some(),
+        "Expected JSON Schema, got: {}",
+        serde_json::to_string_pretty(&json).unwrap()
+    );
 }
 
 #[test]
 fn schema_invalid_topic() {
-    let output = ode_cmd()
-        .args(["schema", "nonsense"])
-        .output().unwrap();
+    let output = ode_cmd().args(["schema", "nonsense"]).output().unwrap();
 
     assert_eq!(output.status.code(), Some(1));
     let json = parse_json(&output);
@@ -241,7 +347,12 @@ fn validate_stdin() {
         .spawn()
         .and_then(|mut child| {
             use std::io::Write;
-            child.stdin.take().unwrap().write_all(json.as_bytes()).unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(json.as_bytes())
+                .unwrap();
             child.wait_with_output()
         })
         .unwrap();
@@ -263,7 +374,12 @@ fn inspect_stdin() {
         .spawn()
         .and_then(|mut child| {
             use std::io::Write;
-            child.stdin.take().unwrap().write_all(json.as_bytes()).unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(json.as_bytes())
+                .unwrap();
             child.wait_with_output()
         })
         .unwrap();

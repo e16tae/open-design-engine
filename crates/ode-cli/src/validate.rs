@@ -1,23 +1,23 @@
-use std::collections::{HashMap, HashSet};
-use ode_format::wire::{
-    DocumentWire, NodeKindWire, ViewKindWire,
-};
 use crate::output::{ValidateResponse, ValidationIssue, Warning};
+use ode_format::wire::{DocumentWire, NodeKindWire, ViewKindWire};
+use std::collections::{HashMap, HashSet};
 
 pub fn validate_json(json: &str) -> ValidateResponse {
     // Phase 1: Parse
     let wire: DocumentWire = match serde_json::from_str(json) {
         Ok(w) => w,
-        Err(e) => return ValidateResponse {
-            valid: false,
-            errors: vec![ValidationIssue {
-                path: String::new(),
-                code: "PARSE_FAILED".to_string(),
-                message: e.to_string(),
-                suggestion: None,
-            }],
-            warnings: vec![],
-        },
+        Err(e) => {
+            return ValidateResponse {
+                valid: false,
+                errors: vec![ValidationIssue {
+                    path: String::new(),
+                    code: "PARSE_FAILED".to_string(),
+                    message: e.to_string(),
+                    suggestion: None,
+                }],
+                warnings: vec![],
+            };
+        }
     };
 
     let mut errors = Vec::new();
@@ -55,10 +55,7 @@ pub fn validate_json(json: &str) -> ValidateResponse {
     for (i, node) in wire.nodes.iter().enumerate() {
         let children = get_children_wire(&node.kind);
         for (j, child_id) in children.iter().enumerate() {
-            check_ref(
-                &format!("nodes[{i}].kind.children[{j}]"),
-                child_id,
-            );
+            check_ref(&format!("nodes[{i}].kind.children[{j}]"), child_id);
         }
     }
 
@@ -125,7 +122,9 @@ fn get_children_wire(kind: &NodeKindWire) -> Vec<&str> {
 }
 
 fn check_circular_hierarchy(wire: &DocumentWire, errors: &mut Vec<ValidationIssue>) {
-    let adj: HashMap<&str, Vec<&str>> = wire.nodes.iter()
+    let adj: HashMap<&str, Vec<&str>> = wire
+        .nodes
+        .iter()
         .map(|n| (n.stable_id.as_str(), get_children_wire(&n.kind)))
         .collect();
 
@@ -134,14 +133,15 @@ fn check_circular_hierarchy(wire: &DocumentWire, errors: &mut Vec<ValidationIssu
 
     for node in &wire.nodes {
         if !visited.contains(node.stable_id.as_str())
-            && has_cycle(&adj, &node.stable_id, &mut visited, &mut in_stack) {
-                errors.push(ValidationIssue {
-                    path: format!("nodes (stable_id='{}')", node.stable_id),
-                    code: "CIRCULAR_HIERARCHY".to_string(),
-                    message: "circular parent-child relationship detected".to_string(),
-                    suggestion: None,
-                });
-            }
+            && has_cycle(&adj, &node.stable_id, &mut visited, &mut in_stack)
+        {
+            errors.push(ValidationIssue {
+                path: format!("nodes (stable_id='{}')", node.stable_id),
+                code: "CIRCULAR_HIERARCHY".to_string(),
+                message: "circular parent-child relationship detected".to_string(),
+                suggestion: None,
+            });
+        }
     }
 }
 
@@ -168,8 +168,14 @@ fn has_cycle<'a>(
     false
 }
 
-fn check_component_refs(wire: &DocumentWire, id_set: &HashSet<&str>, errors: &mut Vec<ValidationIssue>) {
-    let component_ids: HashSet<&str> = wire.nodes.iter()
+fn check_component_refs(
+    wire: &DocumentWire,
+    id_set: &HashSet<&str>,
+    errors: &mut Vec<ValidationIssue>,
+) {
+    let component_ids: HashSet<&str> = wire
+        .nodes
+        .iter()
         .filter(|n| matches!(&n.kind, NodeKindWire::Frame(d) if d.component_def.is_some()))
         .map(|n| n.stable_id.as_str())
         .collect();
@@ -187,7 +193,10 @@ fn check_component_refs(wire: &DocumentWire, id_set: &HashSet<&str>, errors: &mu
                 errors.push(ValidationIssue {
                     path: format!("nodes[{i}].kind.source_component"),
                     code: "INVALID_COMPONENT_REF".to_string(),
-                    message: format!("source_component '{}' exists but has no component_def", d.source_component),
+                    message: format!(
+                        "source_component '{}' exists but has no component_def",
+                        d.source_component
+                    ),
                     suggestion: None,
                 });
             }
@@ -195,9 +204,15 @@ fn check_component_refs(wire: &DocumentWire, id_set: &HashSet<&str>, errors: &mu
     }
 }
 
-fn check_override_targets(wire: &DocumentWire, id_set: &HashSet<&str>, errors: &mut Vec<ValidationIssue>) {
+fn check_override_targets(
+    wire: &DocumentWire,
+    id_set: &HashSet<&str>,
+    errors: &mut Vec<ValidationIssue>,
+) {
     // Build adjacency map and node kind map
-    let adj: HashMap<&str, Vec<&str>> = wire.nodes.iter()
+    let adj: HashMap<&str, Vec<&str>> = wire
+        .nodes
+        .iter()
         .map(|n| (n.stable_id.as_str(), get_children_wire(&n.kind)))
         .collect();
 
@@ -237,7 +252,7 @@ fn check_override_targets(wire: &DocumentWire, id_set: &HashSet<&str>, errors: &
                     errors.push(ValidationIssue {
                         path: format!("{path_prefix}.target"),
                         code: "INVALID_OVERRIDE_TARGET".to_string(),
-                        message: format!("override target '{}' not found", target),
+                        message: format!("override target '{target}' not found"),
                         suggestion: None,
                     });
                     continue;
@@ -264,8 +279,7 @@ fn check_override_targets(wire: &DocumentWire, id_set: &HashSet<&str>, errors: &
                             path: format!("{path_prefix}.target"),
                             code: "SIZE_OVERRIDE_ON_COMPONENT_ROOT".to_string(),
                             message: format!(
-                                "Size override targets component root '{}'; use instance width/height fields instead",
-                                target
+                                "Size override targets component root '{target}'; use instance width/height fields instead"
                             ),
                             suggestion: Some("set width/height on the instance node directly".to_string()),
                         });
@@ -281,8 +295,7 @@ fn check_override_targets(wire: &DocumentWire, id_set: &HashSet<&str>, errors: &
                                 path: format!("{path_prefix}.type"),
                                 code: "OVERRIDE_TYPE_MISMATCH".to_string(),
                                 message: format!(
-                                    "TextContent override targets '{}' which is not a Text node",
-                                    target
+                                    "TextContent override targets '{target}' which is not a Text node"
                                 ),
                                 suggestion: None,
                             });
@@ -355,9 +368,7 @@ fn check_layout_rules(
                     warnings.push(Warning {
                         path: format!("{path_prefix}.min_width/max_width"),
                         code: "MIN_EXCEEDS_MAX".to_string(),
-                        message: format!(
-                            "min_width ({min_w}) exceeds max_width ({max_w})"
-                        ),
+                        message: format!("min_width ({min_w}) exceeds max_width ({max_w})"),
                     });
                 }
             }
@@ -366,9 +377,7 @@ fn check_layout_rules(
                     warnings.push(Warning {
                         path: format!("{path_prefix}.min_height/max_height"),
                         code: "MIN_EXCEEDS_MAX".to_string(),
-                        message: format!(
-                            "min_height ({min_h}) exceeds max_height ({max_h})"
-                        ),
+                        message: format!("min_height ({min_h}) exceeds max_height ({max_h})"),
                     });
                 }
             }
@@ -388,7 +397,10 @@ fn check_cmyk_warnings(wire: &DocumentWire, warnings: &mut Vec<Warning>) {
         };
         if let Some(vis) = visual {
             for (j, fill) in vis.fills.iter().enumerate() {
-                if let ode_format::style::Paint::Solid { color: ode_format::style::StyleValue::Raw(c) } = &fill.paint {
+                if let ode_format::style::Paint::Solid {
+                    color: ode_format::style::StyleValue::Raw(c),
+                } = &fill.paint
+                {
                     if matches!(c, ode_format::color::Color::Cmyk { .. }) {
                         warnings.push(Warning {
                             path: format!("nodes[{i}].kind.visual.fills[{j}].paint.color"),
@@ -422,7 +434,11 @@ mod tests {
     #[test]
     fn valid_document_passes() {
         let result = validate_json(&make_valid_json());
-        assert!(result.valid, "Expected valid, got errors: {:?}", result.errors);
+        assert!(
+            result.valid,
+            "Expected valid, got errors: {:?}",
+            result.errors
+        );
     }
 
     #[test]
@@ -499,7 +515,11 @@ mod tests {
             "canvas": ["root"], "tokens": {"collections": [], "active_modes": {}}, "views": []
         }"#;
         let result = validate_json(json);
-        assert!(result.valid, "Expected valid, got errors: {:?}", result.errors);
+        assert!(
+            result.valid,
+            "Expected valid, got errors: {:?}",
+            result.errors
+        );
     }
 
     #[test]
@@ -545,8 +565,11 @@ mod tests {
         }"#;
         let result = validate_json(json);
         assert!(result.valid, "min > max should be a warning, not an error");
-        assert!(result.warnings.iter().any(|w| w.code == "MIN_EXCEEDS_MAX"),
-            "Expected MIN_EXCEEDS_MAX warning, got: {:?}", result.warnings);
+        assert!(
+            result.warnings.iter().any(|w| w.code == "MIN_EXCEEDS_MAX"),
+            "Expected MIN_EXCEEDS_MAX warning, got: {:?}",
+            result.warnings
+        );
     }
 
     // ─── Override Validation Tests ───
@@ -565,7 +588,11 @@ mod tests {
             "canvas": ["comp"], "tokens": {"collections": [], "active_modes": {}}, "views": []
         }"#;
         let result = validate_json(json);
-        assert!(result.valid, "Valid instance with overrides should pass, got errors: {:?}", result.errors);
+        assert!(
+            result.valid,
+            "Valid instance with overrides should pass, got errors: {:?}",
+            result.errors
+        );
     }
 
     #[test]
@@ -583,8 +610,14 @@ mod tests {
         }"#;
         let result = validate_json(json);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.code == "INVALID_OVERRIDE_TARGET"),
-            "Expected INVALID_OVERRIDE_TARGET, got: {:?}", result.errors);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.code == "INVALID_OVERRIDE_TARGET"),
+            "Expected INVALID_OVERRIDE_TARGET, got: {:?}",
+            result.errors
+        );
     }
 
     #[test]
@@ -605,8 +638,14 @@ mod tests {
         }"#;
         let result = validate_json(json);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.code == "OVERRIDE_TYPE_MISMATCH"),
-            "Expected OVERRIDE_TYPE_MISMATCH, got: {:?}", result.errors);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.code == "OVERRIDE_TYPE_MISMATCH"),
+            "Expected OVERRIDE_TYPE_MISMATCH, got: {:?}",
+            result.errors
+        );
     }
 
     #[test]
@@ -633,10 +672,19 @@ mod tests {
             "canvas": ["comp_a", "comp_b"], "tokens": {"collections": [], "active_modes": {}}, "views": []
         }"#;
         let result = validate_json(json);
-        assert!(!result.valid,
-            "Override targeting node outside component subtree should fail, got: {:?}", result.errors);
-        assert!(result.errors.iter().any(|e| e.code == "OVERRIDE_TARGET_NOT_IN_COMPONENT"),
-            "Expected OVERRIDE_TARGET_NOT_IN_COMPONENT, got: {:?}", result.errors);
+        assert!(
+            !result.valid,
+            "Override targeting node outside component subtree should fail, got: {:?}",
+            result.errors
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.code == "OVERRIDE_TARGET_NOT_IN_COMPONENT"),
+            "Expected OVERRIDE_TARGET_NOT_IN_COMPONENT, got: {:?}",
+            result.errors
+        );
     }
 
     #[test]
@@ -655,7 +703,13 @@ mod tests {
         }"#;
         let result = validate_json(json);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.code == "SIZE_OVERRIDE_ON_COMPONENT_ROOT"),
-            "Expected SIZE_OVERRIDE_ON_COMPONENT_ROOT, got: {:?}", result.errors);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.code == "SIZE_OVERRIDE_ON_COMPONENT_ROOT"),
+            "Expected SIZE_OVERRIDE_ON_COMPONENT_ROOT, got: {:?}",
+            result.errors
+        );
     }
 }

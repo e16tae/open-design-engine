@@ -1,5 +1,5 @@
+use crate::scene::{ResolvedGradientStop, ResolvedPaint};
 use ode_format::color::Color;
-use crate::scene::{ResolvedPaint, ResolvedGradientStop};
 
 /// Convert ODE Color to tiny-skia Color.
 pub fn color_to_skia(color: &Color) -> tiny_skia::Color {
@@ -18,48 +18,84 @@ pub fn fill_with_paint(
 ) {
     match paint {
         ResolvedPaint::Solid(color) => {
-            let mut p = tiny_skia::Paint::default();
-            p.shader = tiny_skia::Shader::SolidColor(color_to_skia(color));
-            p.anti_alias = true;
+            let p = tiny_skia::Paint {
+                shader: tiny_skia::Shader::SolidColor(color_to_skia(color)),
+                anti_alias: true,
+                ..Default::default()
+            };
             pixmap.fill_path(path, &p, fill_rule, transform, mask);
         }
         ResolvedPaint::LinearGradient { stops, start, end } => {
             if let Some(shader) = make_linear_gradient(stops, *start, *end) {
-                let mut p = tiny_skia::Paint::default();
-                p.shader = shader;
-                p.anti_alias = true;
+                let p = tiny_skia::Paint {
+                    shader,
+                    anti_alias: true,
+                    ..Default::default()
+                };
                 pixmap.fill_path(path, &p, fill_rule, transform, mask);
             } else {
-                eprintln!("[ode-core] LinearGradient creation failed ({} stops, start={:?}, end={:?}). Falling back to first stop color.", stops.len(), start, end);
+                eprintln!(
+                    "[ode-core] LinearGradient creation failed ({} stops, start={:?}, end={:?}). Falling back to first stop color.",
+                    stops.len(),
+                    start,
+                    end
+                );
                 if let Some(first) = stops.first() {
-                    let mut p = tiny_skia::Paint::default();
-                    p.shader = tiny_skia::Shader::SolidColor(color_to_skia(&first.color));
-                    p.anti_alias = true;
+                    let p = tiny_skia::Paint {
+                        shader: tiny_skia::Shader::SolidColor(color_to_skia(&first.color)),
+                        anti_alias: true,
+                        ..Default::default()
+                    };
                     pixmap.fill_path(path, &p, fill_rule, transform, mask);
                 }
             }
         }
-        ResolvedPaint::RadialGradient { stops, center, radius } => {
+        ResolvedPaint::RadialGradient {
+            stops,
+            center,
+            radius,
+        } => {
             if let Some(shader) = make_radial_gradient(stops, *center, *radius) {
-                let mut p = tiny_skia::Paint::default();
-                p.shader = shader;
-                p.anti_alias = true;
+                let p = tiny_skia::Paint {
+                    shader,
+                    anti_alias: true,
+                    ..Default::default()
+                };
                 pixmap.fill_path(path, &p, fill_rule, transform, mask);
             } else {
-                eprintln!("[ode-core] RadialGradient creation failed ({} stops, center={:?}, radius={:?}). Falling back to first stop color.", stops.len(), center, radius);
+                eprintln!(
+                    "[ode-core] RadialGradient creation failed ({} stops, center={:?}, radius={:?}). Falling back to first stop color.",
+                    stops.len(),
+                    center,
+                    radius
+                );
                 if let Some(first) = stops.first() {
-                    let mut p = tiny_skia::Paint::default();
-                    p.shader = tiny_skia::Shader::SolidColor(color_to_skia(&first.color));
-                    p.anti_alias = true;
+                    let p = tiny_skia::Paint {
+                        shader: tiny_skia::Shader::SolidColor(color_to_skia(&first.color)),
+                        anti_alias: true,
+                        ..Default::default()
+                    };
                     pixmap.fill_path(path, &p, fill_rule, transform, mask);
                 }
             }
         }
-        ResolvedPaint::AngularGradient { stops, center, angle } => {
-            fill_angular_gradient(pixmap, path, stops, *center, *angle, fill_rule, transform, mask);
+        ResolvedPaint::AngularGradient {
+            stops,
+            center,
+            angle,
+        } => {
+            fill_angular_gradient(
+                pixmap, path, stops, *center, *angle, fill_rule, transform, mask,
+            );
         }
-        ResolvedPaint::DiamondGradient { stops, center, radius } => {
-            fill_diamond_gradient(pixmap, path, stops, *center, *radius, fill_rule, transform, mask);
+        ResolvedPaint::DiamondGradient {
+            stops,
+            center,
+            radius,
+        } => {
+            fill_diamond_gradient(
+                pixmap, path, stops, *center, *radius, fill_rule, transform, mask,
+            );
         }
     }
 }
@@ -75,9 +111,11 @@ pub fn stroke_with_paint(
 ) {
     match paint {
         ResolvedPaint::Solid(color) => {
-            let mut p = tiny_skia::Paint::default();
-            p.shader = tiny_skia::Shader::SolidColor(color_to_skia(color));
-            p.anti_alias = true;
+            let p = tiny_skia::Paint {
+                shader: tiny_skia::Shader::SolidColor(color_to_skia(color)),
+                anti_alias: true,
+                ..Default::default()
+            };
             pixmap.stroke_path(path, &p, stroke, transform, mask);
         }
         ResolvedPaint::LinearGradient { stops, start, end } => {
@@ -85,33 +123,57 @@ pub fn stroke_with_paint(
             if let Some(shader) = make_linear_gradient(stops, *start, *end) {
                 p.shader = shader;
             } else {
-                eprintln!("[ode-core] LinearGradient creation failed for stroke ({} stops). Using first stop color.", stops.len());
-                let fallback = stops.first().map(|s| color_to_skia(&s.color)).unwrap_or(tiny_skia::Color::BLACK);
+                eprintln!(
+                    "[ode-core] LinearGradient creation failed for stroke ({} stops). Using first stop color.",
+                    stops.len()
+                );
+                let fallback = stops
+                    .first()
+                    .map(|s| color_to_skia(&s.color))
+                    .unwrap_or(tiny_skia::Color::BLACK);
                 p.shader = tiny_skia::Shader::SolidColor(fallback);
             }
             p.anti_alias = true;
             pixmap.stroke_path(path, &p, stroke, transform, mask);
         }
-        ResolvedPaint::RadialGradient { stops, center, radius } => {
+        ResolvedPaint::RadialGradient {
+            stops,
+            center,
+            radius,
+        } => {
             let mut p = tiny_skia::Paint::default();
             if let Some(shader) = make_radial_gradient(stops, *center, *radius) {
                 p.shader = shader;
             } else {
-                eprintln!("[ode-core] RadialGradient creation failed for stroke ({} stops). Using first stop color.", stops.len());
-                let fallback = stops.first().map(|s| color_to_skia(&s.color)).unwrap_or(tiny_skia::Color::BLACK);
+                eprintln!(
+                    "[ode-core] RadialGradient creation failed for stroke ({} stops). Using first stop color.",
+                    stops.len()
+                );
+                let fallback = stops
+                    .first()
+                    .map(|s| color_to_skia(&s.color))
+                    .unwrap_or(tiny_skia::Color::BLACK);
                 p.shader = tiny_skia::Shader::SolidColor(fallback);
             }
             p.anti_alias = true;
             pixmap.stroke_path(path, &p, stroke, transform, mask);
         }
-        ResolvedPaint::AngularGradient { stops, center, angle } => {
+        ResolvedPaint::AngularGradient {
+            stops,
+            center,
+            angle,
+        } => {
             let w = pixmap.width();
             let h = pixmap.height();
             if let Some(grad_pm) = generate_angular_gradient_pixmap(w, h, stops, *center, *angle) {
                 stroke_with_gradient_pixmap(pixmap, &grad_pm, path, stroke, transform, mask);
             }
         }
-        ResolvedPaint::DiamondGradient { stops, center, radius } => {
+        ResolvedPaint::DiamondGradient {
+            stops,
+            center,
+            radius,
+        } => {
             let w = pixmap.width();
             let h = pixmap.height();
             if let Some(grad_pm) = generate_diamond_gradient_pixmap(w, h, stops, *center, *radius) {
@@ -122,9 +184,10 @@ pub fn stroke_with_paint(
 }
 
 fn gradient_stops_to_skia(stops: &[ResolvedGradientStop]) -> Vec<tiny_skia::GradientStop> {
-    stops.iter().map(|s| {
-        tiny_skia::GradientStop::new(s.position, color_to_skia(&s.color))
-    }).collect()
+    stops
+        .iter()
+        .map(|s| tiny_skia::GradientStop::new(s.position, color_to_skia(&s.color)))
+        .collect()
 }
 
 fn make_linear_gradient(
@@ -165,13 +228,23 @@ fn make_radial_gradient(
 
 /// Sample a gradient color at a given position (0.0 to 1.0) from sorted stops.
 fn sample_gradient(stops: &[ResolvedGradientStop], t: f32) -> tiny_skia::Color {
-    if stops.is_empty() { return tiny_skia::Color::TRANSPARENT; }
-    if t <= stops[0].position { return color_to_skia(&stops[0].color); }
-    if t >= stops[stops.len() - 1].position { return color_to_skia(&stops[stops.len() - 1].color); }
+    if stops.is_empty() {
+        return tiny_skia::Color::TRANSPARENT;
+    }
+    if t <= stops[0].position {
+        return color_to_skia(&stops[0].color);
+    }
+    if t >= stops[stops.len() - 1].position {
+        return color_to_skia(&stops[stops.len() - 1].color);
+    }
     for i in 0..stops.len() - 1 {
         if t >= stops[i].position && t <= stops[i + 1].position {
             let range = stops[i + 1].position - stops[i].position;
-            let frac = if range > 0.0 { (t - stops[i].position) / range } else { 0.0 };
+            let frac = if range > 0.0 {
+                (t - stops[i].position) / range
+            } else {
+                0.0
+            };
             let c0 = color_to_skia(&stops[i].color);
             let c1 = color_to_skia(&stops[i + 1].color);
             return tiny_skia::Color::from_rgba(
@@ -179,7 +252,8 @@ fn sample_gradient(stops: &[ResolvedGradientStop], t: f32) -> tiny_skia::Color {
                 c0.green() + (c1.green() - c0.green()) * frac,
                 c0.blue() + (c1.blue() - c0.blue()) * frac,
                 c0.alpha() + (c1.alpha() - c0.alpha()) * frac,
-            ).unwrap_or(tiny_skia::Color::BLACK);
+            )
+            .unwrap_or(tiny_skia::Color::BLACK);
         }
     }
     color_to_skia(&stops[stops.len() - 1].color)
@@ -202,7 +276,9 @@ pub fn generate_angular_gradient_pixmap(
             let dx = x as f32 - cx;
             let dy = y as f32 - cy;
             let mut a = dy.atan2(dx) - angle_offset;
-            if a < 0.0 { a += std::f32::consts::TAU; }
+            if a < 0.0 {
+                a += std::f32::consts::TAU;
+            }
             let t = a / std::f32::consts::TAU;
             let color = sample_gradient(stops, t);
             let pm = color.premultiply().to_color_u8();
@@ -227,7 +303,10 @@ pub fn generate_diamond_gradient_pixmap(
     let ry = radius.y as f32;
     // Zero radius → degenerate gradient, fill with last stop color
     if rx.abs() < f32::EPSILON || ry.abs() < f32::EPSILON {
-        let color = stops.last().map(|_| sample_gradient(stops, 1.0)).unwrap_or(tiny_skia::Color::TRANSPARENT);
+        let color = stops
+            .last()
+            .map(|_| sample_gradient(stops, 1.0))
+            .unwrap_or(tiny_skia::Color::TRANSPARENT);
         let pm = color.premultiply().to_color_u8();
         for pixel in grad_pixmap.pixels_mut() {
             *pixel = pm;
@@ -248,6 +327,7 @@ pub fn generate_diamond_gradient_pixmap(
 }
 
 /// Fill a path with an angular gradient using a pre-generated pixmap + clip mask.
+#[allow(clippy::too_many_arguments)]
 fn fill_angular_gradient(
     pixmap: &mut tiny_skia::Pixmap,
     path: &tiny_skia::Path,
@@ -265,7 +345,9 @@ fn fill_angular_gradient(
             clip_mask.fill_path(path, fill_rule, true, transform);
             // Combine with external mask if provided (intersect: keep only where both masks allow)
             if let Some(ext_mask) = mask {
-                for (clip_byte, ext_byte) in clip_mask.data_mut().iter_mut().zip(ext_mask.data().iter()) {
+                for (clip_byte, ext_byte) in
+                    clip_mask.data_mut().iter_mut().zip(ext_mask.data().iter())
+                {
                     *clip_byte = ((*clip_byte as u16 * *ext_byte as u16) / 255) as u8;
                 }
             }
@@ -274,12 +356,20 @@ fn fill_angular_gradient(
                 blend_mode: tiny_skia::BlendMode::SourceOver,
                 quality: tiny_skia::FilterQuality::Nearest,
             };
-            pixmap.draw_pixmap(0, 0, grad_pixmap.as_ref(), &paint, tiny_skia::Transform::identity(), Some(&clip_mask));
+            pixmap.draw_pixmap(
+                0,
+                0,
+                grad_pixmap.as_ref(),
+                &paint,
+                tiny_skia::Transform::identity(),
+                Some(&clip_mask),
+            );
         }
     }
 }
 
 /// Fill a path with a diamond gradient using a pre-generated pixmap + clip mask.
+#[allow(clippy::too_many_arguments)]
 fn fill_diamond_gradient(
     pixmap: &mut tiny_skia::Pixmap,
     path: &tiny_skia::Path,
@@ -297,7 +387,9 @@ fn fill_diamond_gradient(
             clip_mask.fill_path(path, fill_rule, true, transform);
             // Combine with external mask if provided (intersect: keep only where both masks allow)
             if let Some(ext_mask) = mask {
-                for (clip_byte, ext_byte) in clip_mask.data_mut().iter_mut().zip(ext_mask.data().iter()) {
+                for (clip_byte, ext_byte) in
+                    clip_mask.data_mut().iter_mut().zip(ext_mask.data().iter())
+                {
                     *clip_byte = ((*clip_byte as u16 * *ext_byte as u16) / 255) as u8;
                 }
             }
@@ -306,7 +398,14 @@ fn fill_diamond_gradient(
                 blend_mode: tiny_skia::BlendMode::SourceOver,
                 quality: tiny_skia::FilterQuality::Nearest,
             };
-            pixmap.draw_pixmap(0, 0, grad_pixmap.as_ref(), &paint, tiny_skia::Transform::identity(), Some(&clip_mask));
+            pixmap.draw_pixmap(
+                0,
+                0,
+                grad_pixmap.as_ref(),
+                &paint,
+                tiny_skia::Transform::identity(),
+                Some(&clip_mask),
+            );
         }
     }
 }
@@ -325,10 +424,14 @@ fn stroke_with_gradient_pixmap(
     let w = pixmap.width();
     let h = pixmap.height();
     // Stroke path with solid white to get the stroke shape
-    let Some(mut stroke_pm) = tiny_skia::Pixmap::new(w, h) else { return };
-    let mut white = tiny_skia::Paint::default();
-    white.shader = tiny_skia::Shader::SolidColor(tiny_skia::Color::WHITE);
-    white.anti_alias = true;
+    let Some(mut stroke_pm) = tiny_skia::Pixmap::new(w, h) else {
+        return;
+    };
+    let white = tiny_skia::Paint {
+        shader: tiny_skia::Shader::SolidColor(tiny_skia::Color::WHITE),
+        anti_alias: true,
+        ..Default::default()
+    };
     stroke_pm.stroke_path(path, &white, stroke, transform, None);
     // Mask gradient with stroke shape: keep gradient only where stroke exists
     let mut masked = grad_pixmap.clone();
@@ -337,14 +440,28 @@ fn stroke_with_gradient_pixmap(
         opacity: 1.0,
         quality: tiny_skia::FilterQuality::Nearest,
     };
-    masked.draw_pixmap(0, 0, stroke_pm.as_ref(), &mask_paint, tiny_skia::Transform::identity(), None);
+    masked.draw_pixmap(
+        0,
+        0,
+        stroke_pm.as_ref(),
+        &mask_paint,
+        tiny_skia::Transform::identity(),
+        None,
+    );
     // Composite onto target
     let paint = tiny_skia::PixmapPaint {
         blend_mode: tiny_skia::BlendMode::SourceOver,
         opacity: 1.0,
         quality: tiny_skia::FilterQuality::Nearest,
     };
-    pixmap.draw_pixmap(0, 0, masked.as_ref(), &paint, tiny_skia::Transform::identity(), mask);
+    pixmap.draw_pixmap(
+        0,
+        0,
+        masked.as_ref(),
+        &paint,
+        tiny_skia::Transform::identity(),
+        mask,
+    );
 }
 
 #[cfg(test)]
@@ -372,7 +489,12 @@ mod tests {
     #[test]
     fn solid_paint_fills_pixel() {
         let mut pixmap = tiny_skia::Pixmap::new(10, 10).unwrap();
-        let paint = ResolvedPaint::Solid(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 });
+        let paint = ResolvedPaint::Solid(Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        });
         let mut bp = kurbo::BezPath::new();
         bp.move_to((0.0, 0.0));
         bp.line_to((10.0, 0.0));
@@ -381,9 +503,12 @@ mod tests {
         bp.close_path();
         let skia_path = crate::path::bezpath_to_skia(&bp).unwrap();
         fill_with_paint(
-            &mut pixmap, &skia_path, &paint,
+            &mut pixmap,
+            &skia_path,
+            &paint,
             tiny_skia::FillRule::Winding,
-            tiny_skia::Transform::identity(), None,
+            tiny_skia::Transform::identity(),
+            None,
         );
         let pixel = pixmap.pixel(5, 5).unwrap();
         assert_eq!(pixel.red(), 255);
@@ -396,8 +521,14 @@ mod tests {
         let mut pixmap = tiny_skia::Pixmap::new(100, 10).unwrap();
         let paint = ResolvedPaint::LinearGradient {
             stops: vec![
-                ResolvedGradientStop { position: 0.0, color: Color::black() },
-                ResolvedGradientStop { position: 1.0, color: Color::white() },
+                ResolvedGradientStop {
+                    position: 0.0,
+                    color: Color::black(),
+                },
+                ResolvedGradientStop {
+                    position: 1.0,
+                    color: Color::white(),
+                },
             ],
             start: kurbo::Point::new(0.0, 0.0),
             end: kurbo::Point::new(100.0, 0.0),
@@ -410,13 +541,20 @@ mod tests {
         bp.close_path();
         let skia_path = crate::path::bezpath_to_skia(&bp).unwrap();
         fill_with_paint(
-            &mut pixmap, &skia_path, &paint,
+            &mut pixmap,
+            &skia_path,
+            &paint,
             tiny_skia::FillRule::Winding,
-            tiny_skia::Transform::identity(), None,
+            tiny_skia::Transform::identity(),
+            None,
         );
         let left = pixmap.pixel(5, 5).unwrap();
         let right = pixmap.pixel(95, 5).unwrap();
         assert!(left.red() < 50, "Left should be dark, got {}", left.red());
-        assert!(right.red() > 200, "Right should be light, got {}", right.red());
+        assert!(
+            right.red() > 200,
+            "Right should be light, got {}",
+            right.red()
+        );
     }
 }

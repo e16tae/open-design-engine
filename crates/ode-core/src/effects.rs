@@ -1,10 +1,14 @@
 /// Apply Gaussian blur to a pixmap using 3-pass box blur approximation.
 /// Each pass is O(n) regardless of radius (separable horizontal + vertical).
 pub fn gaussian_blur(pixmap: &mut tiny_skia::Pixmap, radius: f32) {
-    if radius <= 0.0 { return; }
+    if radius <= 0.0 {
+        return;
+    }
     let w = pixmap.width() as usize;
     let h = pixmap.height() as usize;
-    if w == 0 || h == 0 { return; }
+    if w == 0 || h == 0 {
+        return;
+    }
 
     // Box blur radius for 3-pass approximation of Gaussian
     let boxes = boxes_for_gauss(radius, 3);
@@ -23,10 +27,13 @@ pub fn gaussian_blur(pixmap: &mut tiny_skia::Pixmap, radius: f32) {
 fn boxes_for_gauss(sigma: f32, n: usize) -> Vec<f32> {
     let w_ideal = ((12.0 * sigma * sigma / n as f32) + 1.0).sqrt();
     let mut wl = w_ideal.floor();
-    if wl as i32 % 2 == 0 { wl -= 1.0; }
+    if wl as i32 % 2 == 0 {
+        wl -= 1.0;
+    }
     let wu = wl + 2.0;
-    let m_ideal = (12.0 * sigma * sigma - n as f32 * wl * wl - 4.0 * n as f32 * wl - 3.0 * n as f32)
-        / (-4.0 * wl - 4.0);
+    let m_ideal =
+        (12.0 * sigma * sigma - n as f32 * wl * wl - 4.0 * n as f32 * wl - 3.0 * n as f32)
+            / (-4.0 * wl - 4.0);
     let m = m_ideal.round() as usize;
     (0..n).map(|i| if i < m { wl } else { wu }).collect()
 }
@@ -62,7 +69,9 @@ fn write_channels(pixmap: &mut tiny_skia::Pixmap, channels: &[Vec<f32>]) {
 fn box_blur_h(src: &[Vec<f32>], dst: &mut [Vec<f32>], w: usize, h: usize, r: f32) {
     let r = (r as usize) / 2;
     if r == 0 {
-        for c in 0..4 { dst[c].copy_from_slice(&src[c]); }
+        for c in 0..4 {
+            dst[c].copy_from_slice(&src[c]);
+        }
         return;
     }
     let iarr = 1.0 / (2 * r + 1) as f32;
@@ -70,17 +79,19 @@ fn box_blur_h(src: &[Vec<f32>], dst: &mut [Vec<f32>], w: usize, h: usize, r: f32
         for y in 0..h {
             let row = y * w;
             let mut val = src[c][row] * (r + 1) as f32;
-            for i in 0..r { val += src[c][row + i.min(w - 1)]; }
-            for _ in 0..r { val += src[c][row]; }
+            for i in 0..r {
+                val += src[c][row + i.min(w - 1)];
+            }
+            for _ in 0..r {
+                val += src[c][row];
+            }
 
-            let mut li = 0usize;
             let mut ri = r;
-            for x in 0..w {
+            for (li, x) in (0..w).enumerate() {
                 dst[c][row + x] = val * iarr;
                 let right = (ri + 1).min(w - 1);
                 let left = if li > 0 { li - 1 } else { 0 };
                 val += src[c][row + right] - src[c][row + left];
-                li += 1;
                 ri += 1;
             }
         }
@@ -90,24 +101,28 @@ fn box_blur_h(src: &[Vec<f32>], dst: &mut [Vec<f32>], w: usize, h: usize, r: f32
 fn box_blur_v(src: &[Vec<f32>], dst: &mut [Vec<f32>], w: usize, h: usize, r: f32) {
     let r = (r as usize) / 2;
     if r == 0 {
-        for c in 0..4 { dst[c].copy_from_slice(&src[c]); }
+        for c in 0..4 {
+            dst[c].copy_from_slice(&src[c]);
+        }
         return;
     }
     let iarr = 1.0 / (2 * r + 1) as f32;
     for c in 0..4 {
         for x in 0..w {
             let mut val = src[c][x] * (r + 1) as f32;
-            for i in 0..r { val += src[c][i.min(h - 1) * w + x]; }
-            for _ in 0..r { val += src[c][x]; }
+            for i in 0..r {
+                val += src[c][i.min(h - 1) * w + x];
+            }
+            for _ in 0..r {
+                val += src[c][x];
+            }
 
-            let mut li = 0usize;
             let mut ri = r;
-            for y in 0..h {
+            for (li, y) in (0..h).enumerate() {
                 dst[c][y * w + x] = val * iarr;
                 let bottom = ((ri + 1).min(h - 1)) * w + x;
                 let top = (if li > 0 { li - 1 } else { 0 }) * w + x;
                 val += src[c][bottom] - src[c][top];
-                li += 1;
                 ri += 1;
             }
         }
@@ -117,13 +132,17 @@ fn box_blur_v(src: &[Vec<f32>], dst: &mut [Vec<f32>], w: usize, h: usize, r: f32
 /// Scale a path outward (positive spread) or inward (negative spread).
 /// Uses scale-around-center as an approximation of true path offsetting.
 fn apply_spread(path: &tiny_skia::Path, spread: f32) -> Option<tiny_skia::Path> {
-    if spread.abs() < f32::EPSILON { return None; }
+    if spread.abs() < f32::EPSILON {
+        return None;
+    }
     let bounds = path.bounds();
     let cx = (bounds.left() + bounds.right()) / 2.0;
     let cy = (bounds.top() + bounds.bottom()) / 2.0;
     let w = bounds.width();
     let h = bounds.height();
-    if w < f32::EPSILON || h < f32::EPSILON { return None; }
+    if w < f32::EPSILON || h < f32::EPSILON {
+        return None;
+    }
     let sx = ((w + 2.0 * spread) / w).max(f32::EPSILON);
     let sy = ((h + 2.0 * spread) / h).max(f32::EPSILON);
     let t1 = tiny_skia::Transform::from_translate(-cx, -cy);
@@ -134,6 +153,7 @@ fn apply_spread(path: &tiny_skia::Path, spread: f32) -> Option<tiny_skia::Path> 
 }
 
 /// Render a drop shadow effect. Returns a pixmap with the shadow to composite UNDER content.
+#[allow(clippy::too_many_arguments)]
 pub fn render_drop_shadow(
     content_path: &tiny_skia::Path,
     color: &ode_format::color::Color,
@@ -160,6 +180,7 @@ pub fn render_drop_shadow(
 
 /// Render an inner shadow effect. Returns a pixmap to composite OVER content.
 /// Spread contracts the cutout shape (making the shadow thicker around edges).
+#[allow(clippy::too_many_arguments)]
 pub fn render_inner_shadow(
     content_path: &tiny_skia::Path,
     color: &ode_format::color::Color,
@@ -174,24 +195,44 @@ pub fn render_inner_shadow(
     let cutout = cutout_path.as_ref().unwrap_or(content_path);
     let mut shadow = tiny_skia::Pixmap::new(width, height)?;
     shadow.fill(crate::paint::color_to_skia(color));
-    let mut cutout_paint = tiny_skia::Paint::default();
-    cutout_paint.shader = tiny_skia::Shader::SolidColor(tiny_skia::Color::TRANSPARENT);
-    cutout_paint.blend_mode = tiny_skia::BlendMode::Source;
-    cutout_paint.anti_alias = true;
+    let cutout_paint = tiny_skia::Paint {
+        shader: tiny_skia::Shader::SolidColor(tiny_skia::Color::TRANSPARENT),
+        blend_mode: tiny_skia::BlendMode::Source,
+        anti_alias: true,
+        ..Default::default()
+    };
     let transform = tiny_skia::Transform::from_translate(offset_x, offset_y);
-    shadow.fill_path(cutout, &cutout_paint, tiny_skia::FillRule::Winding, transform, None);
+    shadow.fill_path(
+        cutout,
+        &cutout_paint,
+        tiny_skia::FillRule::Winding,
+        transform,
+        None,
+    );
     if blur_radius > 0.0 {
         gaussian_blur(&mut shadow, blur_radius);
     }
     if let Some(mut mask) = tiny_skia::Mask::new(width, height) {
-        mask.fill_path(content_path, tiny_skia::FillRule::Winding, true, tiny_skia::Transform::identity());
+        mask.fill_path(
+            content_path,
+            tiny_skia::FillRule::Winding,
+            true,
+            tiny_skia::Transform::identity(),
+        );
         let mut clipped = tiny_skia::Pixmap::new(width, height)?;
         let paint = tiny_skia::PixmapPaint {
             opacity: 1.0,
             blend_mode: tiny_skia::BlendMode::SourceOver,
             quality: tiny_skia::FilterQuality::Nearest,
         };
-        clipped.draw_pixmap(0, 0, shadow.as_ref(), &paint, tiny_skia::Transform::identity(), Some(&mask));
+        clipped.draw_pixmap(
+            0,
+            0,
+            shadow.as_ref(),
+            &paint,
+            tiny_skia::Transform::identity(),
+            Some(&mask),
+        );
         return Some(clipped);
     }
     Some(shadow)
@@ -213,14 +254,26 @@ pub fn render_background_blur(
     let mut blurred = background.clone();
     gaussian_blur(&mut blurred, radius);
     if let Some(mut mask) = tiny_skia::Mask::new(width, height) {
-        mask.fill_path(content_path, tiny_skia::FillRule::Winding, true, tiny_skia::Transform::identity());
+        mask.fill_path(
+            content_path,
+            tiny_skia::FillRule::Winding,
+            true,
+            tiny_skia::Transform::identity(),
+        );
         let mut result = tiny_skia::Pixmap::new(width, height)?;
         let paint = tiny_skia::PixmapPaint {
             opacity: 1.0,
             blend_mode: tiny_skia::BlendMode::SourceOver,
             quality: tiny_skia::FilterQuality::Nearest,
         };
-        result.draw_pixmap(0, 0, blurred.as_ref(), &paint, tiny_skia::Transform::identity(), Some(&mask));
+        result.draw_pixmap(
+            0,
+            0,
+            blurred.as_ref(),
+            &paint,
+            tiny_skia::Transform::identity(),
+            Some(&mask),
+        );
         return Some(result);
     }
     Some(blurred)

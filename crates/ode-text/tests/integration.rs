@@ -1,6 +1,6 @@
-use ode_format::node::TextData;
-use ode_format::style::{VisualProps, Fill, Paint, StyleValue, BlendMode};
 use ode_format::color::Color;
+use ode_format::node::TextData;
+use ode_format::style::{BlendMode, Fill, Paint, StyleValue, VisualProps};
 use ode_format::typography::*;
 use ode_text::FontDatabase;
 
@@ -49,8 +49,14 @@ fn process_simple_text_with_system_font() {
 
     // "Hello" has 5 characters — should produce at least some glyphs
     // (exact count depends on shaping; ligatures may reduce it)
-    assert!(!result.glyphs.is_empty(), "Expected glyph outlines for 'Hello'");
-    assert!(result.computed_height > 0.0, "Computed height should be positive");
+    assert!(
+        !result.glyphs.is_empty(),
+        "Expected glyph outlines for 'Hello'"
+    );
+    assert!(
+        result.computed_height > 0.0,
+        "Computed height should be positive"
+    );
 }
 
 #[test]
@@ -74,7 +80,10 @@ fn process_multiline_text() {
     let result = ode_text::process_text(&data, &db).unwrap();
     assert!(!result.glyphs.is_empty());
     // Multiline should produce a taller result than single line
-    assert!(result.computed_height > 20.0, "Multi-line text should have substantial height");
+    assert!(
+        result.computed_height > 20.0,
+        "Multi-line text should have substantial height"
+    );
 }
 
 #[test]
@@ -100,7 +109,10 @@ fn process_text_with_underline_decoration() {
 
     let result = ode_text::process_text(&data, &db).unwrap();
     assert!(!result.glyphs.is_empty());
-    assert!(!result.decorations.is_empty(), "Underlined text should produce decoration rects");
+    assert!(
+        !result.decorations.is_empty(),
+        "Underlined text should produce decoration rects"
+    );
 }
 
 #[test]
@@ -123,7 +135,10 @@ fn process_text_auto_width_mode() {
 
     let result = ode_text::process_text(&data, &db).unwrap();
     // AutoWidth: text should not wrap (except at \n), so computed_width > box width
-    assert!(result.computed_width > 50.0, "AutoWidth should allow text wider than container");
+    assert!(
+        result.computed_width > 50.0,
+        "AutoWidth should allow text wider than container"
+    );
 }
 
 #[test]
@@ -131,22 +146,27 @@ fn text_data_new_fields_roundtrip() {
     let data = TextData {
         visual: VisualProps::default(),
         content: "Styled text".to_string(),
-        runs: vec![
-            TextRun {
-                start: 0,
-                end: 6,
-                style: TextRunStyle {
-                    font_weight: Some(StyleValue::Raw(700)),
-                    fills: Some(vec![Fill {
-                        paint: Paint::Solid { color: StyleValue::Raw(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }) },
-                        opacity: StyleValue::Raw(1.0),
-                        blend_mode: BlendMode::Normal,
-                        visible: true,
-                    }]),
-                    ..Default::default()
-                },
+        runs: vec![TextRun {
+            start: 0,
+            end: 6,
+            style: TextRunStyle {
+                font_weight: Some(StyleValue::Raw(700)),
+                fills: Some(vec![Fill {
+                    paint: Paint::Solid {
+                        color: StyleValue::Raw(Color::Srgb {
+                            r: 1.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
+                    },
+                    opacity: StyleValue::Raw(1.0),
+                    blend_mode: BlendMode::Normal,
+                    visible: true,
+                }]),
+                ..Default::default()
             },
-        ],
+        }],
         default_style: TextStyle {
             font_size: StyleValue::Raw(24.0),
             text_align: TextAlign::Center,

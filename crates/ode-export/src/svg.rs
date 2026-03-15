@@ -63,7 +63,7 @@ impl SvgContext {
 
     fn next_id(&mut self, prefix: &str) -> String {
         self.id_counter += 1;
-        format!("{}{}", prefix, self.id_counter)
+        format!("{prefix}{}", self.id_counter)
     }
 
     fn finish(self) -> String {
@@ -113,14 +113,13 @@ impl SvgContext {
                     let clip_transform = transform_to_svg_attr(&t);
                     let _ = write!(
                         self.defs,
-                        "\n<clipPath id=\"{}\"><path d=\"{}\"{}/>",
-                        clip_id, d, clip_transform
+                        "\n<clipPath id=\"{clip_id}\"><path d=\"{d}\"{clip_transform}/>"
                     );
                     self.defs.push_str("</clipPath>");
-                    let _ = write!(attrs, " clip-path=\"url(#{})\"", clip_id);
+                    let _ = write!(attrs, " clip-path=\"url(#{clip_id})\"");
                 }
 
-                let _ = write!(self.body, "\n<g{}>", attrs);
+                let _ = write!(self.body, "\n<g{attrs}>");
                 self.layer_stack.push(LayerState { had_effect: false });
             }
             RenderCommand::PopLayer => {
@@ -142,15 +141,15 @@ impl SvgContext {
                 let rule = fill_rule_to_svg(fill_rule);
                 let t = transform_to_svg_attr(transform);
 
-                let mut attrs = format!(" d=\"{}\" fill=\"{}\"", d, fill_str);
+                let mut attrs = format!(" d=\"{d}\" fill=\"{fill_str}\"");
                 if !rule.is_empty() {
-                    let _ = write!(attrs, " fill-rule=\"{}\"", rule);
+                    let _ = write!(attrs, " fill-rule=\"{rule}\"");
                 }
                 if (fill_opacity - 1.0).abs() > f32::EPSILON {
                     let _ = write!(attrs, " fill-opacity=\"{}\"", fmt_f32(fill_opacity));
                 }
                 attrs.push_str(&t);
-                let _ = write!(self.body, "\n<path{}/>", attrs);
+                let _ = write!(self.body, "\n<path{attrs}/>");
             }
             RenderCommand::StrokePath {
                 path,
@@ -167,19 +166,11 @@ impl SvgContext {
                 if let Some(layer) = self.layer_stack.last_mut() {
                     if !layer.had_effect {
                         layer.had_effect = true;
-                        let _ = write!(
-                            self.body,
-                            "\n<g filter=\"url(#{})\">",
-                            filter_id
-                        );
+                        let _ = write!(self.body, "\n<g filter=\"url(#{filter_id})\">");
                     }
                     // For multiple effects on same layer, close previous and open new
                     else {
-                        let _ = write!(
-                            self.body,
-                            "\n</g>\n<g filter=\"url(#{})\">",
-                            filter_id
-                        );
+                        let _ = write!(self.body, "\n</g>\n<g filter=\"url(#{filter_id})\">");
                     }
                 }
             }
@@ -204,14 +195,25 @@ impl SvgContext {
             StrokePosition::Center => {
                 let mut attrs = format!(
                     " d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"",
-                    d, stroke_color, fmt_f32(stroke.width)
+                    d,
+                    stroke_color,
+                    fmt_f32(stroke.width)
                 );
                 if (stroke_opacity - 1.0).abs() > f32::EPSILON {
                     let _ = write!(attrs, " stroke-opacity=\"{}\"", fmt_f32(stroke_opacity));
                 }
-                let _ = write!(attrs, " stroke-linecap=\"{}\" stroke-linejoin=\"{}\"", cap, join);
-                if stroke.join == StrokeJoin::Miter && (stroke.miter_limit - 4.0).abs() > f32::EPSILON {
-                    let _ = write!(attrs, " stroke-miterlimit=\"{}\"", fmt_f32(stroke.miter_limit));
+                let _ = write!(
+                    attrs,
+                    " stroke-linecap=\"{cap}\" stroke-linejoin=\"{join}\""
+                );
+                if stroke.join == StrokeJoin::Miter
+                    && (stroke.miter_limit - 4.0).abs() > f32::EPSILON
+                {
+                    let _ = write!(
+                        attrs,
+                        " stroke-miterlimit=\"{}\"",
+                        fmt_f32(stroke.miter_limit)
+                    );
                 }
                 if let Some(ref dash) = stroke.dash {
                     let segs: Vec<String> = dash.segments.iter().map(|s| fmt_f32(*s)).collect();
@@ -221,58 +223,67 @@ impl SvgContext {
                     }
                 }
                 attrs.push_str(&t);
-                let _ = write!(self.body, "\n<path{}/>", attrs);
+                let _ = write!(self.body, "\n<path{attrs}/>");
             }
             StrokePosition::Inside => {
                 // Inside stroke: double the width, clip to path interior
                 let clip_id = self.next_id("clip");
                 let _ = write!(
                     self.defs,
-                    "\n<clipPath id=\"{}\"><path d=\"{}\"/></clipPath>",
-                    clip_id, d
+                    "\n<clipPath id=\"{clip_id}\"><path d=\"{d}\"/></clipPath>"
                 );
                 let doubled = stroke.width * 2.0;
                 let mut attrs = format!(
                     " d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" clip-path=\"url(#{})\"",
-                    d, stroke_color, fmt_f32(doubled), clip_id
+                    d,
+                    stroke_color,
+                    fmt_f32(doubled),
+                    clip_id
                 );
                 if (stroke_opacity - 1.0).abs() > f32::EPSILON {
                     let _ = write!(attrs, " stroke-opacity=\"{}\"", fmt_f32(stroke_opacity));
                 }
-                let _ = write!(attrs, " stroke-linecap=\"{}\" stroke-linejoin=\"{}\"", cap, join);
+                let _ = write!(
+                    attrs,
+                    " stroke-linecap=\"{cap}\" stroke-linejoin=\"{join}\""
+                );
                 if let Some(ref dash) = stroke.dash {
                     let segs: Vec<String> = dash.segments.iter().map(|s| fmt_f32(*s)).collect();
                     let _ = write!(attrs, " stroke-dasharray=\"{}\"", segs.join(","));
                 }
                 attrs.push_str(&t);
-                let _ = write!(self.body, "\n<path{}/>", attrs);
+                let _ = write!(self.body, "\n<path{attrs}/>");
             }
             StrokePosition::Outside => {
                 // Outside stroke: double the width, clip to path exterior (inverted mask)
                 let clip_id = self.next_id("clip");
                 let _ = write!(
                     self.defs,
-                    "\n<clipPath id=\"{}\"><path d=\"M0,0 H{} V{} H0 Z {}\" clip-rule=\"evenodd\"/></clipPath>",
-                    clip_id,
+                    "\n<clipPath id=\"{clip_id}\"><path d=\"M0,0 H{} V{} H0 Z {d}\" clip-rule=\"evenodd\"/></clipPath>",
                     fmt_f32(self.width),
                     fmt_f32(self.height),
-                    d
                 );
                 let doubled = stroke.width * 2.0;
                 let mut attrs = format!(
                     " d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" clip-path=\"url(#{})\"",
-                    d, stroke_color, fmt_f32(doubled), clip_id
+                    d,
+                    stroke_color,
+                    fmt_f32(doubled),
+                    clip_id
                 );
                 if (stroke_opacity - 1.0).abs() > f32::EPSILON {
                     let _ = write!(attrs, " stroke-opacity=\"{}\"", fmt_f32(stroke_opacity));
                 }
-                let _ = write!(attrs, " stroke-linecap=\"{}\" stroke-linejoin=\"{}\"", cap, join);
+                let _ = write!(
+                    attrs,
+                    " stroke-linecap=\"{cap}\" stroke-linejoin=\"{join}\""
+                );
                 if let Some(ref dash) = stroke.dash {
                     let segs: Vec<String> = dash.segments.iter().map(|s| fmt_f32(*s)).collect();
                     let _ = write!(attrs, " stroke-dasharray=\"{}\"", segs.join(","));
                 }
                 attrs.push_str(&t);
-                let _ = write!(self.body, "\n<path{}/>", attrs);
+                let _ = write!(self.body, "\n<path{attrs}/>");
             }
         }
         Ok(())
@@ -291,13 +302,17 @@ impl SvgContext {
                 let _ = write!(
                     self.defs,
                     "\n<linearGradient id=\"{}\" gradientUnits=\"userSpaceOnUse\" x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\">",
-                    id, fmt_f32(start.x as f32), fmt_f32(start.y as f32), fmt_f32(end.x as f32), fmt_f32(end.y as f32)
+                    id,
+                    fmt_f32(start.x as f32),
+                    fmt_f32(start.y as f32),
+                    fmt_f32(end.x as f32),
+                    fmt_f32(end.y as f32)
                 );
                 for stop in stops {
                     write_gradient_stop(&mut self.defs, stop);
                 }
                 self.defs.push_str("</linearGradient>");
-                Ok((format!("url(#{})", id), 1.0))
+                Ok((format!("url(#{id})"), 1.0))
             }
             ResolvedPaint::RadialGradient {
                 stops,
@@ -325,13 +340,17 @@ impl SvgContext {
                 let _ = write!(
                     self.defs,
                     "\n<radialGradient id=\"{}\" gradientUnits=\"userSpaceOnUse\" cx=\"{}\" cy=\"{}\" r=\"{}\"{}>",
-                    id, fmt_f32(cx), fmt_f32(cy), fmt_f32(rx), transform
+                    id,
+                    fmt_f32(cx),
+                    fmt_f32(cy),
+                    fmt_f32(rx),
+                    transform
                 );
                 for stop in stops {
                     write_gradient_stop(&mut self.defs, stop);
                 }
                 self.defs.push_str("</radialGradient>");
-                Ok((format!("url(#{})", id), 1.0))
+                Ok((format!("url(#{id})"), 1.0))
             }
             ResolvedPaint::AngularGradient {
                 stops,
@@ -340,13 +359,7 @@ impl SvgContext {
             } => {
                 // SVG has no native angular gradient — rasterize and embed as base64 PNG
                 self.write_raster_gradient_fallback(|w, h| {
-                    ode_core::paint::generate_angular_gradient_pixmap(
-                        w,
-                        h,
-                        stops,
-                        *center,
-                        *angle,
-                    )
+                    ode_core::paint::generate_angular_gradient_pixmap(w, h, stops, *center, *angle)
                 })
             }
             ResolvedPaint::DiamondGradient {
@@ -356,13 +369,7 @@ impl SvgContext {
             } => {
                 // SVG has no native diamond gradient — rasterize and embed as base64 PNG
                 self.write_raster_gradient_fallback(|w, h| {
-                    ode_core::paint::generate_diamond_gradient_pixmap(
-                        w,
-                        h,
-                        stops,
-                        *center,
-                        *radius,
-                    )
+                    ode_core::paint::generate_diamond_gradient_pixmap(w, h, stops, *center, *radius)
                 })
             }
         }
@@ -387,16 +394,14 @@ impl SvgContext {
         let img_id = self.next_id("img");
         let _ = write!(
             self.defs,
-            "\n<pattern id=\"{}\" patternUnits=\"userSpaceOnUse\" width=\"{}\" height=\"{}\">",
-            pat_id, w, h
+            "\n<pattern id=\"{pat_id}\" patternUnits=\"userSpaceOnUse\" width=\"{w}\" height=\"{h}\">"
         );
         let _ = write!(
             self.defs,
-            "<image id=\"{}\" width=\"{}\" height=\"{}\" href=\"data:image/png;base64,{}\"/>",
-            img_id, w, h, b64
+            "<image id=\"{img_id}\" width=\"{w}\" height=\"{h}\" href=\"data:image/png;base64,{b64}\"/>"
         );
         self.defs.push_str("</pattern>");
-        Ok((format!("url(#{})", pat_id), 1.0))
+        Ok((format!("url(#{pat_id})"), 1.0))
     }
 
     fn write_filter_def(&mut self, effect: &ResolvedEffect) -> String {
@@ -412,11 +417,12 @@ impl SvgContext {
             } => {
                 let (css_color, alpha) = color_to_css(color);
                 let sigma = blur_radius / 2.0;
-                let _ = write!(self.defs, "\n<filter id=\"{}\">", id);
+                let _ = write!(self.defs, "\n<filter id=\"{id}\">");
                 let _ = write!(
                     self.defs,
                     "<feFlood flood-color=\"{}\" flood-opacity=\"{}\" result=\"flood\"/>",
-                    css_color, fmt_f32(alpha)
+                    css_color,
+                    fmt_f32(alpha)
                 );
                 self.defs.push_str("<feComposite in=\"flood\" in2=\"SourceAlpha\" operator=\"in\" result=\"shadow\"/>");
                 if spread.abs() > f32::EPSILON {
@@ -440,7 +446,8 @@ impl SvgContext {
                 let _ = write!(
                     self.defs,
                     "<feOffset in=\"blur\" dx=\"{}\" dy=\"{}\" result=\"offset\"/>",
-                    fmt_f32(*offset_x), fmt_f32(*offset_y)
+                    fmt_f32(*offset_x),
+                    fmt_f32(*offset_y)
                 );
                 self.defs.push_str("<feMerge><feMergeNode in=\"offset\"/><feMergeNode in=\"SourceGraphic\"/></feMerge>");
                 self.defs.push_str("</filter>");
@@ -455,7 +462,7 @@ impl SvgContext {
             } => {
                 let (css_color, alpha) = color_to_css(color);
                 let sigma = blur_radius / 2.0;
-                let _ = write!(self.defs, "\n<filter id=\"{}\">", id);
+                let _ = write!(self.defs, "\n<filter id=\"{id}\">");
                 // Invert alpha of source
                 self.defs.push_str("<feComponentTransfer in=\"SourceAlpha\"><feFuncA type=\"table\" tableValues=\"1 0\"/></feComponentTransfer>");
                 if spread.abs() > f32::EPSILON {
@@ -479,14 +486,18 @@ impl SvgContext {
                 let _ = write!(
                     self.defs,
                     "<feOffset in=\"blur\" dx=\"{}\" dy=\"{}\" result=\"offset\"/>",
-                    fmt_f32(*offset_x), fmt_f32(*offset_y)
+                    fmt_f32(*offset_x),
+                    fmt_f32(*offset_y)
                 );
                 let _ = write!(
                     self.defs,
                     "<feFlood flood-color=\"{}\" flood-opacity=\"{}\" result=\"color\"/>",
-                    css_color, fmt_f32(alpha)
+                    css_color,
+                    fmt_f32(alpha)
                 );
-                self.defs.push_str("<feComposite in=\"color\" in2=\"offset\" operator=\"in\" result=\"shadow\"/>");
+                self.defs.push_str(
+                    "<feComposite in=\"color\" in2=\"offset\" operator=\"in\" result=\"shadow\"/>",
+                );
                 self.defs.push_str("<feComposite in=\"shadow\" in2=\"SourceAlpha\" operator=\"in\" result=\"clipped\"/>");
                 self.defs.push_str("<feMerge><feMergeNode in=\"SourceGraphic\"/><feMergeNode in=\"clipped\"/></feMerge>");
                 self.defs.push_str("</filter>");
@@ -495,8 +506,8 @@ impl SvgContext {
                 let sigma = radius / 2.0;
                 let _ = write!(
                     self.defs,
-                    "\n<filter id=\"{}\"><feGaussianBlur stdDeviation=\"{}\"/></filter>",
-                    id, fmt_f32(sigma)
+                    "\n<filter id=\"{id}\"><feGaussianBlur stdDeviation=\"{}\"/></filter>",
+                    fmt_f32(sigma)
                 );
             }
             ResolvedEffect::BackgroundBlur { radius } => {
@@ -504,8 +515,8 @@ impl SvgContext {
                 let sigma = radius / 2.0;
                 let _ = write!(
                     self.defs,
-                    "\n<!-- BackgroundBlur: limited browser support --><filter id=\"{}\"><feGaussianBlur in=\"BackgroundImage\" stdDeviation=\"{}\"/></filter>",
-                    id, fmt_f32(sigma)
+                    "\n<!-- BackgroundBlur: limited browser support --><filter id=\"{id}\"><feGaussianBlur in=\"BackgroundImage\" stdDeviation=\"{}\"/></filter>",
+                    fmt_f32(sigma)
                 );
             }
         }
@@ -561,23 +572,21 @@ fn color_to_css(color: &Color) -> (String, f32) {
             let ri = (r.clamp(0.0, 1.0) * 255.0).round() as u8;
             let gi = (g.clamp(0.0, 1.0) * 255.0).round() as u8;
             let bi = (b.clamp(0.0, 1.0) * 255.0).round() as u8;
-            (format!("rgb({},{},{})", ri, gi, bi), *a)
+            (format!("rgb({ri},{gi},{bi})"), *a)
         }
-        Color::DisplayP3 { r, g, b, a } => {
-            (
-                format!(
-                    "color(display-p3 {} {} {})",
-                    fmt_f32(*r),
-                    fmt_f32(*g),
-                    fmt_f32(*b)
-                ),
-                *a,
-            )
-        }
+        Color::DisplayP3 { r, g, b, a } => (
+            format!(
+                "color(display-p3 {} {} {})",
+                fmt_f32(*r),
+                fmt_f32(*g),
+                fmt_f32(*b)
+            ),
+            *a,
+        ),
         // Fallback: convert to sRGB via to_rgba_u8
         other => {
             let [r, g, b, a] = other.to_rgba_u8();
-            (format!("rgb({},{},{})", r, g, b), a as f32 / 255.0)
+            (format!("rgb({r},{g},{b})"), a as f32 / 255.0)
         }
     }
 }
@@ -666,7 +675,7 @@ fn fmt_f32(v: f32) -> String {
     if v == v.floor() && v.abs() < 1e9 {
         format!("{}", v as i64)
     } else {
-        let s = format!("{:.4}", v);
+        let s = format!("{v:.4}");
         s.trim_end_matches('0').trim_end_matches('.').to_string()
     }
 }
@@ -699,21 +708,36 @@ mod tests {
 
     #[test]
     fn color_to_css_srgb() {
-        let (css, alpha) = color_to_css(&Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 });
+        let (css, alpha) = color_to_css(&Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        });
         assert_eq!(css, "rgb(255,0,0)");
         assert!((alpha - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn color_to_css_alpha() {
-        let (css, alpha) = color_to_css(&Color::Srgb { r: 0.0, g: 0.0, b: 1.0, a: 0.5 });
+        let (css, alpha) = color_to_css(&Color::Srgb {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 0.5,
+        });
         assert_eq!(css, "rgb(0,0,255)");
         assert!((alpha - 0.5).abs() < f32::EPSILON);
     }
 
     #[test]
     fn color_to_css_display_p3() {
-        let (css, _) = color_to_css(&Color::DisplayP3 { r: 1.0, g: 0.5, b: 0.0, a: 1.0 });
+        let (css, _) = color_to_css(&Color::DisplayP3 {
+            r: 1.0,
+            g: 0.5,
+            b: 0.0,
+            a: 1.0,
+        });
         assert!(css.starts_with("color(display-p3"));
     }
 
@@ -736,7 +760,12 @@ mod tests {
             height: 100.0,
             commands: vec![RenderCommand::FillPath {
                 path: make_rect_path(100.0, 100.0),
-                paint: ResolvedPaint::Solid(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }),
+                paint: ResolvedPaint::Solid(Color::Srgb {
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                }),
                 fill_rule: FillRule::NonZero,
                 transform: tiny_skia::Transform::identity(),
             }],
@@ -757,8 +786,14 @@ mod tests {
                 path: make_rect_path(100.0, 100.0),
                 paint: ResolvedPaint::LinearGradient {
                     stops: vec![
-                        ResolvedGradientStop { position: 0.0, color: Color::black() },
-                        ResolvedGradientStop { position: 1.0, color: Color::white() },
+                        ResolvedGradientStop {
+                            position: 0.0,
+                            color: Color::black(),
+                        },
+                        ResolvedGradientStop {
+                            position: 1.0,
+                            color: Color::white(),
+                        },
                     ],
                     start: kurbo::Point::new(0.0, 0.0),
                     end: kurbo::Point::new(100.0, 0.0),
@@ -783,8 +818,14 @@ mod tests {
                 path: make_rect_path(100.0, 100.0),
                 paint: ResolvedPaint::RadialGradient {
                     stops: vec![
-                        ResolvedGradientStop { position: 0.0, color: Color::white() },
-                        ResolvedGradientStop { position: 1.0, color: Color::black() },
+                        ResolvedGradientStop {
+                            position: 0.0,
+                            color: Color::white(),
+                        },
+                        ResolvedGradientStop {
+                            position: 1.0,
+                            color: Color::black(),
+                        },
                     ],
                     center: kurbo::Point::new(50.0, 50.0),
                     radius: kurbo::Point::new(50.0, 50.0),
@@ -807,8 +848,14 @@ mod tests {
                 path: make_rect_path(50.0, 50.0),
                 paint: ResolvedPaint::AngularGradient {
                     stops: vec![
-                        ResolvedGradientStop { position: 0.0, color: Color::black() },
-                        ResolvedGradientStop { position: 1.0, color: Color::white() },
+                        ResolvedGradientStop {
+                            position: 0.0,
+                            color: Color::black(),
+                        },
+                        ResolvedGradientStop {
+                            position: 1.0,
+                            color: Color::white(),
+                        },
                     ],
                     center: kurbo::Point::new(25.0, 25.0),
                     angle: 0.0,
@@ -837,7 +884,12 @@ mod tests {
                 },
                 RenderCommand::ApplyEffect {
                     effect: ResolvedEffect::DropShadow {
-                        color: Color::Srgb { r: 0.0, g: 0.0, b: 0.0, a: 0.5 },
+                        color: Color::Srgb {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.5,
+                        },
                         offset_x: 2.0,
                         offset_y: 4.0,
                         blur_radius: 8.0,

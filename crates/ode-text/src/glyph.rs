@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use skrifa::{FontRef, GlyphId, MetadataProvider};
+use crate::TextError;
 use skrifa::instance::Size;
 use skrifa::outline::OutlinePen;
-use crate::TextError;
+use skrifa::{FontRef, GlyphId, MetadataProvider};
+use std::collections::HashMap;
 
 /// Pen that converts skrifa outline commands to kurbo::BezPath.
 struct KurboPen {
@@ -11,7 +11,9 @@ struct KurboPen {
 
 impl KurboPen {
     fn new() -> Self {
-        Self { path: kurbo::BezPath::new() }
+        Self {
+            path: kurbo::BezPath::new(),
+        }
     }
 }
 
@@ -25,7 +27,8 @@ impl OutlinePen for KurboPen {
     }
 
     fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
-        self.path.quad_to((cx0 as f64, cy0 as f64), (x as f64, y as f64));
+        self.path
+            .quad_to((cx0 as f64, cy0 as f64), (x as f64, y as f64));
     }
 
     fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
@@ -49,8 +52,7 @@ pub fn get_glyph_outline(
     glyph_id: u16,
     font_size: f32,
 ) -> Result<Option<kurbo::BezPath>, TextError> {
-    let font = FontRef::new(font_data)
-        .map_err(|e| TextError::FontParseFailed(format!("{e}")))?;
+    let font = FontRef::new(font_data).map_err(|e| TextError::FontParseFailed(format!("{e}")))?;
 
     let outlines = font.outline_glyphs();
     let glyph = match outlines.get(GlyphId::new(glyph_id as u32)) {
@@ -60,7 +62,8 @@ pub fn get_glyph_outline(
 
     let mut pen = KurboPen::new();
     let size = Size::new(font_size);
-    let settings = skrifa::outline::DrawSettings::unhinted(size, skrifa::instance::LocationRef::default());
+    let settings =
+        skrifa::outline::DrawSettings::unhinted(size, skrifa::instance::LocationRef::default());
 
     match glyph.draw(settings, &mut pen) {
         Ok(_) => {
