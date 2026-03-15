@@ -43,7 +43,7 @@ krilla = { git = "https://github.com/LaurenzV/krilla.git", rev = "d62aabf" }
 lcms2 = "6"
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 
 # ID generation
 nanoid = "0.4"

@@ -289,6 +289,149 @@ fn build_tree_node(
     }
 }
 
+// ─── ode import figma ───
+
+pub fn cmd_import_figma(
+    token: Option<String>,
+    file_key: Option<String>,
+    input: Option<String>,
+    output: &str,
+    with_variables: bool,
+    _skip_images: bool,
+) -> i32 {
+    use ode_import::figma::convert::FigmaConverter;
+    use ode_import::figma::types::{FigmaFileResponse, FigmaVariablesResponse};
+    use std::collections::HashMap;
+
+    // Load Figma file data
+    let (file_response, variables): (FigmaFileResponse, Option<FigmaVariablesResponse>) =
+        if let Some(input_path) = input {
+            // Local JSON file mode
+            let json_str = match std::fs::read_to_string(&input_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    print_json(&ErrorResponse::new(
+                        "IO_ERROR",
+                        "io",
+                        &format!("Failed to read input file: {}", e),
+                    ));
+                    return EXIT_IO;
+                }
+            };
+            let file: FigmaFileResponse = match serde_json::from_str(&json_str) {
+                Ok(f) => f,
+                Err(e) => {
+                    print_json(&ErrorResponse::new(
+                        "PARSE_FAILED",
+                        "parse",
+                        &format!("Failed to parse Figma JSON: {}", e),
+                    ));
+                    return EXIT_INPUT;
+                }
+            };
+            // Variables from local file: not supported (need separate API call)
+            (file, None)
+        } else if let (Some(token), Some(file_key)) = (token, file_key) {
+            // API mode
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    print_json(&ErrorResponse::new(
+                        "INTERNAL",
+                        "runtime",
+                        &format!("Failed to create async runtime: {}", e),
+                    ));
+                    return EXIT_INTERNAL;
+                }
+            };
+            let client = ode_import::figma::client::FigmaClient::new(token);
+            let file = match rt.block_on(client.get_file(&file_key)) {
+                Ok(f) => f,
+                Err(e) => {
+                    print_json(&ErrorResponse::new(
+                        "API_ERROR",
+                        "api",
+                        &format!("Failed to fetch Figma file: {}", e),
+                    ));
+                    return EXIT_IO;
+                }
+            };
+            let variables = if with_variables {
+                match rt.block_on(client.get_variables(&file_key)) {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        eprintln!("Warning: Failed to fetch variables: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            (file, variables)
+        } else {
+            print_json(&ErrorResponse::new(
+                "INVALID_ARGS",
+                "args",
+                "Either --input or both --token and --file-key are required",
+            ));
+            return EXIT_INPUT;
+        };
+
+    // Convert
+    let result = match FigmaConverter::convert(file_response, variables, HashMap::new()) {
+        Ok(r) => r,
+        Err(e) => {
+            print_json(&ErrorResponse::new(
+                "CONVERT_FAILED",
+                "convert",
+                &format!("Conversion failed: {}", e),
+            ));
+            return EXIT_PROCESS;
+        }
+    };
+
+    // Collect warnings
+    let warnings: Vec<Warning> = result
+        .warnings
+        .iter()
+        .map(|w| Warning {
+            path: w.node_id.clone(),
+            code: "IMPORT_WARNING".to_string(),
+            message: format!("{}: {}", w.node_name, w.message),
+        })
+        .collect();
+
+    // Serialize and write output
+    let json = match serde_json::to_string_pretty(&result.document) {
+        Ok(j) => j,
+        Err(e) => {
+            print_json(&ErrorResponse::new(
+                "INTERNAL",
+                "serialize",
+                &format!("Failed to serialize document: {}", e),
+            ));
+            return EXIT_INTERNAL;
+        }
+    };
+
+    match std::fs::write(output, &json) {
+        Ok(_) => {
+            let mut resp = OkResponse::with_path(output);
+            resp.warnings = warnings;
+            print_json(&resp);
+            EXIT_OK
+        }
+        Err(e) => {
+            print_json(&ErrorResponse::new(
+                "IO_ERROR",
+                "io",
+                &format!("Failed to write output: {}", e),
+            ));
+            EXIT_IO
+        }
+    }
+}
+
 // ─── ode schema ───
 
 pub fn cmd_schema(topic: Option<&str>) -> i32 {
