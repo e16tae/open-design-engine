@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use ode_format::document::Document;
 use ode_format::node::{
-    CounterAxisAlign, FrameData, LayoutConfig, LayoutDirection, LayoutWrap,
-    Node, NodeId, NodeKind, PrimaryAxisAlign, SizingMode,
+    CounterAxisAlign, FrameData, LayoutConfig, LayoutDirection, LayoutWrap, Node, NodeId, NodeKind,
+    PrimaryAxisAlign, SizingMode,
 };
 use taffy::prelude::*;
 
@@ -24,7 +24,10 @@ pub type LayoutMap = HashMap<NodeId, LayoutRect>;
 /// Walks the node tree depth-first, computing layout for each auto-layout
 /// container subtree using taffy. Returns a map of NodeId → LayoutRect
 /// for all nodes that participate in auto layout.
-pub fn compute_layout<'a>(doc: &'a Document, stable_id_index: &HashMap<&'a str, NodeId>) -> LayoutMap {
+pub fn compute_layout<'a>(
+    doc: &'a Document,
+    stable_id_index: &HashMap<&'a str, NodeId>,
+) -> LayoutMap {
     let mut result = LayoutMap::new();
     for &root_id in &doc.canvas {
         walk_for_layout(doc, root_id, &mut result, stable_id_index);
@@ -129,8 +132,13 @@ fn compute_subtree_layout(
         let (intrinsic_w, intrinsic_h) =
             get_intrinsic_size(child_node, child_id, result, doc, stable_id_index);
         let already_laid_out = result.contains_key(&child_id);
-        let child_style =
-            build_child_style(child_node, intrinsic_w, intrinsic_h, config, already_laid_out);
+        let child_style = build_child_style(
+            child_node,
+            intrinsic_w,
+            intrinsic_h,
+            config,
+            already_laid_out,
+        );
 
         let taffy_child = taffy.new_leaf(child_style).unwrap();
         taffy_children.push(taffy_child);
@@ -312,7 +320,15 @@ fn build_child_style(
                     None,
                 )
             } else {
-                (SizingMode::Fixed, SizingMode::Fixed, None, None, None, None, None)
+                (
+                    SizingMode::Fixed,
+                    SizingMode::Fixed,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
             }
         };
 
@@ -342,9 +358,15 @@ fn build_child_style(
     // Determine which axis is the main axis
     let is_horizontal = matches!(parent_config.direction, LayoutDirection::Horizontal);
     let flex_grow = if is_horizontal {
-        if matches!(width_mode, SizingMode::Fill) { 1.0 } else { 0.0 }
+        if matches!(width_mode, SizingMode::Fill) {
+            1.0
+        } else {
+            0.0
+        }
+    } else if matches!(height_mode, SizingMode::Fill) {
+        1.0
     } else {
-        if matches!(height_mode, SizingMode::Fill) { 1.0 } else { 0.0 }
+        0.0
     };
 
     // Figma default: children don't shrink
@@ -409,7 +431,10 @@ fn get_container_available_size(
             SizingMode::Fixed => AvailableSpace::Definite(frame_data.height),
             _ => AvailableSpace::MinContent,
         };
-        Size { width: w, height: h }
+        Size {
+            width: w,
+            height: h,
+        }
     } else {
         Size {
             width: AvailableSpace::MinContent,
@@ -423,17 +448,12 @@ mod tests {
     use super::*;
     use ode_format::document::Document;
     use ode_format::node::{
-        LayoutConfig, LayoutDirection, LayoutPadding, LayoutWrap, Node, NodeKind, PrimaryAxisAlign,
-        CounterAxisAlign, SizingMode, LayoutSizing,
+        CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding, LayoutSizing, LayoutWrap,
+        Node, NodeKind, PrimaryAxisAlign, SizingMode,
     };
 
     /// Helper: create a frame with auto layout enabled.
-    fn make_auto_layout_frame(
-        name: &str,
-        width: f32,
-        height: f32,
-        config: LayoutConfig,
-    ) -> Node {
+    fn make_auto_layout_frame(name: &str, width: f32, height: f32, config: LayoutConfig) -> Node {
         let mut frame = Node::new_frame(name, width, height);
         if let NodeKind::Frame(ref mut data) = frame.kind {
             data.container.layout = Some(config);
@@ -508,7 +528,12 @@ mod tests {
             direction: LayoutDirection::Vertical,
             primary_axis_align: PrimaryAxisAlign::Start,
             counter_axis_align: CounterAxisAlign::Start,
-            padding: LayoutPadding { top: 10.0, right: 10.0, bottom: 10.0, left: 10.0 },
+            padding: LayoutPadding {
+                top: 10.0,
+                right: 10.0,
+                bottom: 10.0,
+                left: 10.0,
+            },
             item_spacing: 8.0,
             wrap: LayoutWrap::NoWrap,
         };
@@ -562,9 +587,19 @@ mod tests {
         let layout = test_compute_layout(&doc);
 
         // Container should shrink to child size
-        let parent_rect = layout.get(&parent_id).expect("Parent should have layout (hug)");
-        assert!((parent_rect.width - 80.0).abs() < 0.1, "w = {}", parent_rect.width);
-        assert!((parent_rect.height - 60.0).abs() < 0.1, "h = {}", parent_rect.height);
+        let parent_rect = layout
+            .get(&parent_id)
+            .expect("Parent should have layout (hug)");
+        assert!(
+            (parent_rect.width - 80.0).abs() < 0.1,
+            "w = {}",
+            parent_rect.width
+        );
+        assert!(
+            (parent_rect.height - 60.0).abs() < 0.1,
+            "h = {}",
+            parent_rect.height
+        );
     }
 
     #[test]
@@ -648,12 +683,24 @@ mod tests {
 
         // Inner container should be 60x44 (hug: w=60, h=20+4+20=44)
         let inner_rect = layout.get(&inner_id).unwrap();
-        assert!((inner_rect.width - 60.0).abs() < 0.1, "inner.w = {}", inner_rect.width);
-        assert!((inner_rect.height - 44.0).abs() < 0.1, "inner.h = {}", inner_rect.height);
+        assert!(
+            (inner_rect.width - 60.0).abs() < 0.1,
+            "inner.w = {}",
+            inner_rect.width
+        );
+        assert!(
+            (inner_rect.height - 44.0).abs() < 0.1,
+            "inner.h = {}",
+            inner_rect.height
+        );
 
         // Sibling should be placed after inner
         let sibling_rect = layout.get(&sibling_id).unwrap();
-        assert!((sibling_rect.x - 60.0).abs() < 0.1, "sibling.x = {}", sibling_rect.x);
+        assert!(
+            (sibling_rect.x - 60.0).abs() < 0.1,
+            "sibling.x = {}",
+            sibling_rect.x
+        );
     }
 
     #[test]
@@ -861,8 +908,16 @@ mod tests {
         // Instance should be placed after the fixed child at x=50
         let inst_rect = layout.get(&inst_id).unwrap();
         assert!((inst_rect.x - 50.0).abs() < 0.1, "inst.x = {}", inst_rect.x);
-        assert!((inst_rect.width - 80.0).abs() < 0.1, "inst.w = {}", inst_rect.width);
-        assert!((inst_rect.height - 40.0).abs() < 0.1, "inst.h = {}", inst_rect.height);
+        assert!(
+            (inst_rect.width - 80.0).abs() < 0.1,
+            "inst.w = {}",
+            inst_rect.width
+        );
+        assert!(
+            (inst_rect.height - 40.0).abs() < 0.1,
+            "inst.h = {}",
+            inst_rect.height
+        );
     }
 
     #[test]
@@ -900,7 +955,15 @@ mod tests {
 
         let layout = test_compute_layout(&doc);
         let inst_rect = layout.get(&inst_id).unwrap();
-        assert!((inst_rect.width - 120.0).abs() < 0.1, "inst.w = {}", inst_rect.width);
-        assert!((inst_rect.height - 60.0).abs() < 0.1, "inst.h = {}", inst_rect.height);
+        assert!(
+            (inst_rect.width - 120.0).abs() < 0.1,
+            "inst.w = {}",
+            inst_rect.width
+        );
+        assert!(
+            (inst_rect.height - 60.0).abs() < 0.1,
+            "inst.h = {}",
+            inst_rect.height
+        );
     }
 }

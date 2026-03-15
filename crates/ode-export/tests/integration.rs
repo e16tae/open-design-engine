@@ -1,9 +1,9 @@
+use ode_core::{Renderer, Scene};
+use ode_export::{PdfExporter, PngExporter};
 use ode_format::color::Color;
 use ode_format::document::Document;
-use ode_format::node::{Node, NodeKind, VectorPath, PathSegment};
+use ode_format::node::{Node, NodeKind, PathSegment, VectorPath};
 use ode_format::style::*;
-use ode_core::{Scene, Renderer};
-use ode_export::{PdfExporter, PngExporter};
 
 /// End-to-end: Build document → convert to scene → render → export PNG → verify pixels
 #[test]
@@ -14,7 +14,12 @@ fn document_to_png_red_frame() {
     if let NodeKind::Frame(ref mut data) = frame.kind {
         data.visual.fills.push(Fill {
             paint: Paint::Solid {
-                color: StyleValue::Raw(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }),
+                color: StyleValue::Raw(Color::Srgb {
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                }),
             },
             opacity: StyleValue::Raw(1.0),
             blend_mode: BlendMode::Normal,
@@ -73,7 +78,12 @@ fn document_with_vector_path() {
     if let NodeKind::Vector(ref mut data) = vector.kind {
         data.visual.fills.push(Fill {
             paint: Paint::Solid {
-                color: StyleValue::Raw(Color::Srgb { r: 0.0, g: 0.0, b: 1.0, a: 1.0 }),
+                color: StyleValue::Raw(Color::Srgb {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 1.0,
+                    a: 1.0,
+                }),
             },
             opacity: StyleValue::Raw(1.0),
             blend_mode: BlendMode::Normal,
@@ -92,11 +102,19 @@ fn document_with_vector_path() {
 
     // Bottom-center of the triangle should be blue
     let bottom_center = pixmap.pixel(32, 60).unwrap();
-    assert!(bottom_center.blue() > 200, "Bottom center of triangle should be blue, got b={}", bottom_center.blue());
+    assert!(
+        bottom_center.blue() > 200,
+        "Bottom center of triangle should be blue, got b={}",
+        bottom_center.blue()
+    );
 
     // Top-left corner should be transparent (outside triangle)
     let corner = pixmap.pixel(2, 2).unwrap();
-    assert!(corner.alpha() < 10, "Top-left corner should be transparent, got alpha={}", corner.alpha());
+    assert!(
+        corner.alpha() < 10,
+        "Top-left corner should be transparent, got alpha={}",
+        corner.alpha()
+    );
 }
 
 #[test]
@@ -107,8 +125,14 @@ fn document_with_gradient_fill() {
         data.visual.fills.push(Fill {
             paint: Paint::LinearGradient {
                 stops: vec![
-                    GradientStop { position: 0.0, color: StyleValue::Raw(Color::black()) },
-                    GradientStop { position: 1.0, color: StyleValue::Raw(Color::white()) },
+                    GradientStop {
+                        position: 0.0,
+                        color: StyleValue::Raw(Color::black()),
+                    },
+                    GradientStop {
+                        position: 1.0,
+                        color: StyleValue::Raw(Color::white()),
+                    },
                 ],
                 start: Point { x: 0.0, y: 0.0 },
                 end: Point { x: 100.0, y: 0.0 },
@@ -128,7 +152,11 @@ fn document_with_gradient_fill() {
     let left = pixmap.pixel(5, 5).unwrap();
     let right = pixmap.pixel(95, 5).unwrap();
     assert!(left.red() < 50, "Left should be dark, got r={}", left.red());
-    assert!(right.red() > 200, "Right should be light, got r={}", right.red());
+    assert!(
+        right.red() > 200,
+        "Right should be light, got r={}",
+        right.red()
+    );
 }
 
 /// End-to-end: Build document → convert to scene → export PDF → verify magic bytes & file
@@ -140,7 +168,12 @@ fn document_to_pdf_red_frame() {
     if let NodeKind::Frame(ref mut data) = frame.kind {
         data.visual.fills.push(Fill {
             paint: Paint::Solid {
-                color: StyleValue::Raw(Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }),
+                color: StyleValue::Raw(Color::Srgb {
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                }),
             },
             opacity: StyleValue::Raw(1.0),
             blend_mode: BlendMode::Normal,

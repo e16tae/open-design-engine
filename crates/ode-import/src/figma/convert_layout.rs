@@ -228,9 +228,8 @@ mod tests {
     #[test]
     fn test_layout_config_returns_none_for_missing_mode() {
         let mut w = empty_warnings();
-        let config = convert_layout_config(
-            None, None, None, None, None, None, None, None, None, &mut w,
-        );
+        let config =
+            convert_layout_config(None, None, None, None, None, None, None, None, None, &mut w);
         assert!(config.is_none());
         assert!(w.is_empty());
     }
@@ -349,10 +348,7 @@ mod tests {
 
     #[test]
     fn test_convert_transform_matrix() {
-        let ft: [[f64; 3]; 2] = [
-            [1.0, 0.0, 100.0],
-            [0.0, 1.0, 200.0],
-        ];
+        let ft: [[f64; 3]; 2] = [[1.0, 0.0, 100.0], [0.0, 1.0, 200.0]];
         let t = convert_transform(&ft);
         assert!((t.a - 1.0).abs() < f32::EPSILON);
         assert!((t.b - 0.0).abs() < f32::EPSILON);
@@ -365,10 +361,7 @@ mod tests {
     #[test]
     fn test_convert_transform_rotation() {
         // 90-degree rotation: a=0, b=1, c=-1, d=0
-        let ft: [[f64; 3]; 2] = [
-            [0.0, -1.0, 50.0],
-            [1.0, 0.0, 75.0],
-        ];
+        let ft: [[f64; 3]; 2] = [[0.0, -1.0, 50.0], [1.0, 0.0, 75.0]];
         let t = convert_transform(&ft);
         assert!((t.a - 0.0).abs() < f32::EPSILON);
         assert!((t.b - 1.0).abs() < f32::EPSILON);

@@ -5,7 +5,10 @@ mod output;
 mod validate;
 
 #[derive(Parser)]
-#[command(name = "ode", about = "Open Design Engine CLI — Agent-native design tool")]
+#[command(
+    name = "ode",
+    about = "Open Design Engine CLI — Agent-native design tool"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -103,24 +106,25 @@ fn main() {
     let cli = Cli::parse();
 
     let exit_code = match cli.command {
-        Command::New { file, name, width, height } => {
-            commands::cmd_new(&file, name.as_deref(), width, height)
-        }
-        Command::Validate { file } => {
-            commands::cmd_validate(&file)
-        }
-        Command::Build { file, output, format } => {
-            commands::cmd_build(&file, &output, format.as_deref())
-        }
-        Command::Render { file, output, format } => {
-            commands::cmd_render(&file, &output, format.as_deref())
-        }
-        Command::Inspect { file, full } => {
-            commands::cmd_inspect(&file, full)
-        }
-        Command::Schema { topic } => {
-            commands::cmd_schema(topic.as_deref())
-        }
+        Command::New {
+            file,
+            name,
+            width,
+            height,
+        } => commands::cmd_new(&file, name.as_deref(), width, height),
+        Command::Validate { file } => commands::cmd_validate(&file),
+        Command::Build {
+            file,
+            output,
+            format,
+        } => commands::cmd_build(&file, &output, format.as_deref()),
+        Command::Render {
+            file,
+            output,
+            format,
+        } => commands::cmd_render(&file, &output, format.as_deref()),
+        Command::Inspect { file, full } => commands::cmd_inspect(&file, full),
+        Command::Schema { topic } => commands::cmd_schema(topic.as_deref()),
         Command::Import { source } => match source {
             ImportSource::Figma {
                 token,

@@ -74,16 +74,15 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ImportError> {
                 }
             }
             let s: String = chars[start..i].iter().collect();
-            let num: f64 = s.parse().map_err(|_| {
-                ImportError::PathParse(format!("invalid number: {}", s))
-            })?;
+            let num: f64 = s
+                .parse()
+                .map_err(|_| ImportError::PathParse(format!("invalid number: {s}")))?;
             tokens.push(Token::Number(num));
             continue;
         }
 
         return Err(ImportError::PathParse(format!(
-            "unexpected character '{}' at position {}",
-            ch, i
+            "unexpected character '{ch}' at position {i}"
         )));
     }
 
@@ -146,8 +145,7 @@ pub fn parse_svg_path(input: &str) -> Result<VectorPath, ImportError> {
                 Ok(*n)
             }
             Token::Command(c) => Err(ImportError::PathParse(format!(
-                "expected number, got command '{}'",
-                c
+                "expected number, got command '{c}'"
             ))),
         }
     };
@@ -159,9 +157,8 @@ pub fn parse_svg_path(input: &str) -> Result<VectorPath, ImportError> {
     };
 
     // Check if there are more numbers to consume for implicit repetition
-    let has_more_numbers = |pos: usize| -> bool {
-        pos < num_tokens && matches!(&tokens[pos], Token::Number(_))
-    };
+    let has_more_numbers =
+        |pos: usize| -> bool { pos < num_tokens && matches!(&tokens[pos], Token::Number(_)) };
 
     while pos < num_tokens {
         // Read the next command
@@ -190,7 +187,7 @@ pub fn parse_svg_path(input: &str) -> Result<VectorPath, ImportError> {
 
         match abs_cmd {
             'M' => {
-                loop {
+                {
                     let mut x = read_num(&mut pos)?;
                     let mut y = read_num(&mut pos)?;
                     if is_relative {
@@ -210,13 +207,6 @@ pub fn parse_svg_path(input: &str) -> Result<VectorPath, ImportError> {
                         y: cy as f32,
                     });
                     prev_cmd = Some(cmd);
-                    // Subsequent coordinates after M are treated as L (or l)
-                    if has_more_numbers(pos) {
-                        // Switch to implicit LineTo for remaining coordinate pairs
-                        break;
-                    } else {
-                        break;
-                    }
                 }
                 // Handle implicit LineTo after MoveTo
                 let implicit_line_relative = is_relative;
@@ -245,111 +235,103 @@ pub fn parse_svg_path(input: &str) -> Result<VectorPath, ImportError> {
                 }
             }
 
-            'L' => {
-                loop {
-                    let mut x = read_num(&mut pos)?;
-                    let mut y = read_num(&mut pos)?;
-                    if is_relative {
-                        x += cx;
-                        y += cy;
-                    }
-                    cx = x;
-                    cy = y;
-                    last_cubic_cp_x = cx;
-                    last_cubic_cp_y = cy;
-                    last_quad_cp_x = cx;
-                    last_quad_cp_y = cy;
-                    segments.push(PathSegment::LineTo {
-                        x: cx as f32,
-                        y: cy as f32,
-                    });
-                    prev_cmd = Some(cmd);
-                    if !has_more_numbers(pos) {
-                        break;
-                    }
+            'L' => loop {
+                let mut x = read_num(&mut pos)?;
+                let mut y = read_num(&mut pos)?;
+                if is_relative {
+                    x += cx;
+                    y += cy;
                 }
-            }
+                cx = x;
+                cy = y;
+                last_cubic_cp_x = cx;
+                last_cubic_cp_y = cy;
+                last_quad_cp_x = cx;
+                last_quad_cp_y = cy;
+                segments.push(PathSegment::LineTo {
+                    x: cx as f32,
+                    y: cy as f32,
+                });
+                prev_cmd = Some(cmd);
+                if !has_more_numbers(pos) {
+                    break;
+                }
+            },
 
-            'H' => {
-                loop {
-                    let mut x = read_num(&mut pos)?;
-                    if is_relative {
-                        x += cx;
-                    }
-                    cx = x;
-                    last_cubic_cp_x = cx;
-                    last_cubic_cp_y = cy;
-                    last_quad_cp_x = cx;
-                    last_quad_cp_y = cy;
-                    segments.push(PathSegment::LineTo {
-                        x: cx as f32,
-                        y: cy as f32,
-                    });
-                    prev_cmd = Some(cmd);
-                    if !has_more_numbers(pos) {
-                        break;
-                    }
+            'H' => loop {
+                let mut x = read_num(&mut pos)?;
+                if is_relative {
+                    x += cx;
                 }
-            }
+                cx = x;
+                last_cubic_cp_x = cx;
+                last_cubic_cp_y = cy;
+                last_quad_cp_x = cx;
+                last_quad_cp_y = cy;
+                segments.push(PathSegment::LineTo {
+                    x: cx as f32,
+                    y: cy as f32,
+                });
+                prev_cmd = Some(cmd);
+                if !has_more_numbers(pos) {
+                    break;
+                }
+            },
 
-            'V' => {
-                loop {
-                    let mut y = read_num(&mut pos)?;
-                    if is_relative {
-                        y += cy;
-                    }
-                    cy = y;
-                    last_cubic_cp_x = cx;
-                    last_cubic_cp_y = cy;
-                    last_quad_cp_x = cx;
-                    last_quad_cp_y = cy;
-                    segments.push(PathSegment::LineTo {
-                        x: cx as f32,
-                        y: cy as f32,
-                    });
-                    prev_cmd = Some(cmd);
-                    if !has_more_numbers(pos) {
-                        break;
-                    }
+            'V' => loop {
+                let mut y = read_num(&mut pos)?;
+                if is_relative {
+                    y += cy;
                 }
-            }
+                cy = y;
+                last_cubic_cp_x = cx;
+                last_cubic_cp_y = cy;
+                last_quad_cp_x = cx;
+                last_quad_cp_y = cy;
+                segments.push(PathSegment::LineTo {
+                    x: cx as f32,
+                    y: cy as f32,
+                });
+                prev_cmd = Some(cmd);
+                if !has_more_numbers(pos) {
+                    break;
+                }
+            },
 
-            'C' => {
-                loop {
-                    let mut x1 = read_num(&mut pos)?;
-                    let mut y1 = read_num(&mut pos)?;
-                    let mut x2 = read_num(&mut pos)?;
-                    let mut y2 = read_num(&mut pos)?;
-                    let mut x = read_num(&mut pos)?;
-                    let mut y = read_num(&mut pos)?;
-                    if is_relative {
-                        x1 += cx;
-                        y1 += cy;
-                        x2 += cx;
-                        y2 += cy;
-                        x += cx;
-                        y += cy;
-                    }
-                    segments.push(PathSegment::CurveTo {
-                        x1: x1 as f32,
-                        y1: y1 as f32,
-                        x2: x2 as f32,
-                        y2: y2 as f32,
-                        x: x as f32,
-                        y: y as f32,
-                    });
-                    last_cubic_cp_x = x2;
-                    last_cubic_cp_y = y2;
-                    last_quad_cp_x = x;
-                    last_quad_cp_y = y;
-                    cx = x;
-                    cy = y;
-                    prev_cmd = Some(cmd);
-                    if !has_more_numbers(pos) {
-                        break;
-                    }
+            'C' => loop {
+                let mut x1 = read_num(&mut pos)?;
+                let mut y1 = read_num(&mut pos)?;
+                let mut x2 = read_num(&mut pos)?;
+                let mut y2 = read_num(&mut pos)?;
+                let mut x = read_num(&mut pos)?;
+                let mut y = read_num(&mut pos)?;
+                if is_relative {
+                    x1 += cx;
+                    y1 += cy;
+                    x2 += cx;
+                    y2 += cy;
+                    x += cx;
+                    y += cy;
                 }
-            }
+                segments.push(PathSegment::CurveTo {
+                    x1: x1 as f32,
+                    y1: y1 as f32,
+                    x2: x2 as f32,
+                    y2: y2 as f32,
+                    x: x as f32,
+                    y: y as f32,
+                });
+                last_cubic_cp_x = x2;
+                last_cubic_cp_y = y2;
+                last_quad_cp_x = x;
+                last_quad_cp_y = y;
+                cx = x;
+                cy = y;
+                prev_cmd = Some(cmd);
+                if !has_more_numbers(pos) {
+                    break;
+                }
+            },
 
             'S' => {
                 loop {
@@ -391,36 +373,34 @@ pub fn parse_svg_path(input: &str) -> Result<VectorPath, ImportError> {
                 }
             }
 
-            'Q' => {
-                loop {
-                    let mut x1 = read_num(&mut pos)?;
-                    let mut y1 = read_num(&mut pos)?;
-                    let mut x = read_num(&mut pos)?;
-                    let mut y = read_num(&mut pos)?;
-                    if is_relative {
-                        x1 += cx;
-                        y1 += cy;
-                        x += cx;
-                        y += cy;
-                    }
-                    segments.push(PathSegment::QuadTo {
-                        x1: x1 as f32,
-                        y1: y1 as f32,
-                        x: x as f32,
-                        y: y as f32,
-                    });
-                    last_quad_cp_x = x1;
-                    last_quad_cp_y = y1;
-                    last_cubic_cp_x = x;
-                    last_cubic_cp_y = y;
-                    cx = x;
-                    cy = y;
-                    prev_cmd = Some(cmd);
-                    if !has_more_numbers(pos) {
-                        break;
-                    }
+            'Q' => loop {
+                let mut x1 = read_num(&mut pos)?;
+                let mut y1 = read_num(&mut pos)?;
+                let mut x = read_num(&mut pos)?;
+                let mut y = read_num(&mut pos)?;
+                if is_relative {
+                    x1 += cx;
+                    y1 += cy;
+                    x += cx;
+                    y += cy;
                 }
-            }
+                segments.push(PathSegment::QuadTo {
+                    x1: x1 as f32,
+                    y1: y1 as f32,
+                    x: x as f32,
+                    y: y as f32,
+                });
+                last_quad_cp_x = x1;
+                last_quad_cp_y = y1;
+                last_cubic_cp_x = x;
+                last_cubic_cp_y = y;
+                cx = x;
+                cy = y;
+                prev_cmd = Some(cmd);
+                if !has_more_numbers(pos) {
+                    break;
+                }
+            },
 
             'T' => {
                 loop {
@@ -456,43 +436,41 @@ pub fn parse_svg_path(input: &str) -> Result<VectorPath, ImportError> {
                 }
             }
 
-            'A' => {
-                loop {
-                    let rx_val = read_num(&mut pos)?;
-                    let ry_val = read_num(&mut pos)?;
-                    let x_rotation = read_num(&mut pos)?;
-                    let large_arc = read_flag(&mut pos)?;
-                    let sweep = read_flag(&mut pos)?;
-                    let mut x = read_num(&mut pos)?;
-                    let mut y = read_num(&mut pos)?;
-                    if is_relative {
-                        x += cx;
-                        y += cy;
-                    }
-                    arc_to_cubics(
-                        &mut segments,
-                        cx,
-                        cy,
-                        rx_val,
-                        ry_val,
-                        x_rotation,
-                        large_arc,
-                        sweep,
-                        x,
-                        y,
-                    );
-                    last_cubic_cp_x = x;
-                    last_cubic_cp_y = y;
-                    last_quad_cp_x = x;
-                    last_quad_cp_y = y;
-                    cx = x;
-                    cy = y;
-                    prev_cmd = Some(cmd);
-                    if !has_more_numbers(pos) {
-                        break;
-                    }
+            'A' => loop {
+                let rx_val = read_num(&mut pos)?;
+                let ry_val = read_num(&mut pos)?;
+                let x_rotation = read_num(&mut pos)?;
+                let large_arc = read_flag(&mut pos)?;
+                let sweep = read_flag(&mut pos)?;
+                let mut x = read_num(&mut pos)?;
+                let mut y = read_num(&mut pos)?;
+                if is_relative {
+                    x += cx;
+                    y += cy;
                 }
-            }
+                arc_to_cubics(
+                    &mut segments,
+                    cx,
+                    cy,
+                    rx_val,
+                    ry_val,
+                    x_rotation,
+                    large_arc,
+                    sweep,
+                    x,
+                    y,
+                );
+                last_cubic_cp_x = x;
+                last_cubic_cp_y = y;
+                last_quad_cp_x = x;
+                last_quad_cp_y = y;
+                cx = x;
+                cy = y;
+                prev_cmd = Some(cmd);
+                if !has_more_numbers(pos) {
+                    break;
+                }
+            },
 
             'Z' => {
                 segments.push(PathSegment::Close);
@@ -508,8 +486,7 @@ pub fn parse_svg_path(input: &str) -> Result<VectorPath, ImportError> {
 
             _ => {
                 return Err(ImportError::PathParse(format!(
-                    "unknown SVG path command '{}'",
-                    cmd
+                    "unknown SVG path command '{cmd}'"
                 )));
             }
         }
@@ -527,6 +504,7 @@ pub fn parse_svg_path(input: &str) -> Result<VectorPath, ImportError> {
 /// 1. Convert endpoint parameterization to center parameterization
 /// 2. Split into segments of at most 90 degrees
 /// 3. Approximate each segment with a cubic bezier
+#[allow(clippy::too_many_arguments)]
 fn arc_to_cubics(
     segments: &mut Vec<PathSegment>,
     x1: f64,
@@ -582,8 +560,7 @@ fn arc_to_cubics(
     }
 
     // Step 3: Compute center point (cx', cy')
-    let num = (rx_sq * ry_sq - rx_sq * y1p_sq - ry_sq * x1p_sq)
-        .max(0.0);
+    let num = (rx_sq * ry_sq - rx_sq * y1p_sq - ry_sq * x1p_sq).max(0.0);
     let den = rx_sq * y1p_sq + ry_sq * x1p_sq;
 
     let sq = if den.abs() < 1e-10 {
@@ -624,9 +601,7 @@ fn arc_to_cubics(
     let n_segs = n_segs.max(1);
     let d = dtheta / n_segs as f64;
 
-    let alpha = (d / 2.0).sin()
-        * ((4.0 + 3.0 * (d / 2.0).tan().powi(2)).sqrt() - 1.0)
-        / 3.0;
+    let alpha = (d / 2.0).sin() * ((4.0 + 3.0 * (d / 2.0).tan().powi(2)).sqrt() - 1.0) / 3.0;
 
     let mut t = theta1;
     let mut px = x1;
@@ -746,9 +721,7 @@ mod tests {
     fn parse_simple_rect() {
         let path = parse_svg_path("M 0 0 L 100 0 L 100 100 L 0 100 Z").unwrap();
         assert_eq!(path.segments.len(), 5);
-        assert!(
-            matches!(path.segments[0], PathSegment::MoveTo { x, y } if x == 0.0 && y == 0.0)
-        );
+        assert!(matches!(path.segments[0], PathSegment::MoveTo { x, y } if x == 0.0 && y == 0.0));
         assert!(matches!(path.segments[4], PathSegment::Close));
         assert!(path.closed);
     }
@@ -773,9 +746,7 @@ mod tests {
     fn parse_h_v_commands() {
         let path = parse_svg_path("M 0 0 H 100 V 50").unwrap();
         assert_eq!(path.segments.len(), 3);
-        assert!(
-            matches!(path.segments[1], PathSegment::LineTo { x, y } if x == 100.0 && y == 0.0)
-        );
+        assert!(matches!(path.segments[1], PathSegment::LineTo { x, y } if x == 100.0 && y == 0.0));
         assert!(
             matches!(path.segments[2], PathSegment::LineTo { x, y } if x == 100.0 && y == 50.0)
         );
@@ -790,16 +761,14 @@ mod tests {
 
     #[test]
     fn parse_smooth_cubic() {
-        let path =
-            parse_svg_path("M 0 0 C 10 20 30 40 50 50 S 80 60 100 50").unwrap();
+        let path = parse_svg_path("M 0 0 C 10 20 30 40 50 50 S 80 60 100 50").unwrap();
         assert_eq!(path.segments.len(), 3); // M, C, C (S becomes C with reflected cp)
         assert!(matches!(path.segments[2], PathSegment::CurveTo { .. }));
     }
 
     #[test]
     fn parse_smooth_quad() {
-        let path =
-            parse_svg_path("M 0 0 Q 50 100 100 0 T 200 0").unwrap();
+        let path = parse_svg_path("M 0 0 Q 50 100 100 0 T 200 0").unwrap();
         assert_eq!(path.segments.len(), 3); // M, Q, Q (T becomes Q with reflected cp)
         assert!(matches!(path.segments[2], PathSegment::QuadTo { .. }));
     }

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Color representation supporting multiple color spaces.
 /// Internal format is structured for performance; MCP tools handle
@@ -121,13 +121,53 @@ impl Color {
 
     pub fn with_alpha(&self, new_alpha: f32) -> Self {
         match self {
-            Self::Srgb { r, g, b, .. } => Self::Srgb { r: *r, g: *g, b: *b, a: new_alpha },
-            Self::DisplayP3 { r, g, b, .. } => Self::DisplayP3 { r: *r, g: *g, b: *b, a: new_alpha },
-            Self::Cmyk { c, m, y, k, .. } => Self::Cmyk { c: *c, m: *m, y: *y, k: *k, a: new_alpha },
-            Self::Oklch { l, c, h, .. } => Self::Oklch { l: *l, c: *c, h: *h, a: new_alpha },
-            Self::Lab { l, a_axis, b_axis, .. } => Self::Lab { l: *l, a_axis: *a_axis, b_axis: *b_axis, a: new_alpha },
-            Self::Icc { profile, channels, .. } => Self::Icc { profile: profile.clone(), channels: channels.clone(), a: new_alpha },
-            Self::Spot { name, fallback_rgb, .. } => Self::Spot { name: name.clone(), fallback_rgb: *fallback_rgb, a: new_alpha },
+            Self::Srgb { r, g, b, .. } => Self::Srgb {
+                r: *r,
+                g: *g,
+                b: *b,
+                a: new_alpha,
+            },
+            Self::DisplayP3 { r, g, b, .. } => Self::DisplayP3 {
+                r: *r,
+                g: *g,
+                b: *b,
+                a: new_alpha,
+            },
+            Self::Cmyk { c, m, y, k, .. } => Self::Cmyk {
+                c: *c,
+                m: *m,
+                y: *y,
+                k: *k,
+                a: new_alpha,
+            },
+            Self::Oklch { l, c, h, .. } => Self::Oklch {
+                l: *l,
+                c: *c,
+                h: *h,
+                a: new_alpha,
+            },
+            Self::Lab {
+                l, a_axis, b_axis, ..
+            } => Self::Lab {
+                l: *l,
+                a_axis: *a_axis,
+                b_axis: *b_axis,
+                a: new_alpha,
+            },
+            Self::Icc {
+                profile, channels, ..
+            } => Self::Icc {
+                profile: profile.clone(),
+                channels: channels.clone(),
+                a: new_alpha,
+            },
+            Self::Spot {
+                name, fallback_rgb, ..
+            } => Self::Spot {
+                name: name.clone(),
+                fallback_rgb: *fallback_rgb,
+                a: new_alpha,
+            },
         }
     }
 
@@ -139,7 +179,9 @@ impl Color {
                 (b.clamp(0.0, 1.0) * 255.0) as u8,
                 (a.clamp(0.0, 1.0) * 255.0) as u8,
             ],
-            Self::Spot { fallback_rgb, a, .. } => [
+            Self::Spot {
+                fallback_rgb, a, ..
+            } => [
                 (fallback_rgb[0].clamp(0.0, 1.0) * 255.0) as u8,
                 (fallback_rgb[1].clamp(0.0, 1.0) * 255.0) as u8,
                 (fallback_rgb[2].clamp(0.0, 1.0) * 255.0) as u8,
@@ -183,7 +225,12 @@ mod tests {
 
     #[test]
     fn display_p3_roundtrip() {
-        let color = Color::DisplayP3 { r: 1.0, g: 0.5, b: 0.0, a: 1.0 };
+        let color = Color::DisplayP3 {
+            r: 1.0,
+            g: 0.5,
+            b: 0.0,
+            a: 1.0,
+        };
         let json = serde_json::to_string(&color).unwrap();
         let parsed: Color = serde_json::from_str(&json).unwrap();
         assert_eq!(color, parsed);
@@ -191,7 +238,13 @@ mod tests {
 
     #[test]
     fn cmyk_has_alpha() {
-        let color = Color::Cmyk { c: 1.0, m: 0.0, y: 0.0, k: 0.0, a: 0.5 };
+        let color = Color::Cmyk {
+            c: 1.0,
+            m: 0.0,
+            y: 0.0,
+            k: 0.0,
+            a: 0.5,
+        };
         assert!((color.alpha() - 0.5).abs() < f32::EPSILON);
     }
 
@@ -210,22 +263,65 @@ mod tests {
     #[test]
     fn alpha_consistent_across_all_variants() {
         let variants: Vec<Color> = vec![
-            Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 0.5 },
-            Color::DisplayP3 { r: 1.0, g: 0.0, b: 0.0, a: 0.5 },
-            Color::Cmyk { c: 1.0, m: 0.0, y: 0.0, k: 0.0, a: 0.5 },
-            Color::Oklch { l: 0.7, c: 0.15, h: 30.0, a: 0.5 },
-            Color::Lab { l: 50.0, a_axis: 20.0, b_axis: -10.0, a: 0.5 },
-            Color::Icc { profile: "sRGB".to_string(), channels: vec![1.0, 0.0, 0.0], a: 0.5 },
-            Color::Spot { name: "Gold".to_string(), fallback_rgb: [0.8, 0.7, 0.2], a: 0.5 },
+            Color::Srgb {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.5,
+            },
+            Color::DisplayP3 {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.5,
+            },
+            Color::Cmyk {
+                c: 1.0,
+                m: 0.0,
+                y: 0.0,
+                k: 0.0,
+                a: 0.5,
+            },
+            Color::Oklch {
+                l: 0.7,
+                c: 0.15,
+                h: 30.0,
+                a: 0.5,
+            },
+            Color::Lab {
+                l: 50.0,
+                a_axis: 20.0,
+                b_axis: -10.0,
+                a: 0.5,
+            },
+            Color::Icc {
+                profile: "sRGB".to_string(),
+                channels: vec![1.0, 0.0, 0.0],
+                a: 0.5,
+            },
+            Color::Spot {
+                name: "Gold".to_string(),
+                fallback_rgb: [0.8, 0.7, 0.2],
+                a: 0.5,
+            },
         ];
         for color in &variants {
-            assert!((color.alpha() - 0.5).abs() < f32::EPSILON, "Failed for {:?}", color);
+            assert!(
+                (color.alpha() - 0.5).abs() < f32::EPSILON,
+                "Failed for {:?}",
+                color
+            );
         }
     }
 
     #[test]
     fn with_alpha_preserves_color() {
-        let color = Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
+        let color = Color::Srgb {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
         let transparent = color.with_alpha(0.3);
         assert!((transparent.alpha() - 0.3).abs() < f32::EPSILON);
         if let Color::Srgb { r, g, b, .. } = transparent {

@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
-use serde::{Deserialize, Serialize};
-use schemars::JsonSchema;
-use thiserror::Error;
 use crate::color::Color;
 use crate::style::{CollectionId, TokenId, TokenRef};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use thiserror::Error;
 
 // ─── ModeId ───
 pub type ModeId = u32;
@@ -153,7 +153,10 @@ impl DesignTokens {
             .map(|n| {
                 let id = self.next_mode_id;
                 self.next_mode_id += 1;
-                Mode { id, name: n.to_string() }
+                Mode {
+                    id,
+                    name: n.to_string(),
+                }
             })
             .collect();
 
@@ -339,11 +342,9 @@ impl DesignTokens {
 
         match resolve {
             TokenResolve::Direct(value) => Ok(value.clone()),
-            TokenResolve::Alias(token_ref) => self.resolve_with_visited(
-                token_ref.collection_id,
-                token_ref.token_id,
-                visited,
-            ),
+            TokenResolve::Alias(token_ref) => {
+                self.resolve_with_visited(token_ref.collection_id, token_ref.token_id, visited)
+            }
         }
     }
 
@@ -411,9 +412,16 @@ mod tests {
     fn make_simple_system() -> DesignTokens {
         let mut tokens = DesignTokens::new();
         let light = tokens.add_collection("Colors", vec!["Light", "Dark"]);
-        tokens.add_token(light, "blue-500", TokenValue::Color(
-            Color::Srgb { r: 0.231, g: 0.510, b: 0.965, a: 1.0 }
-        ));
+        tokens.add_token(
+            light,
+            "blue-500",
+            TokenValue::Color(Color::Srgb {
+                r: 0.231,
+                g: 0.510,
+                b: 0.965,
+                a: 1.0,
+            }),
+        );
         tokens
     }
 
@@ -464,9 +472,16 @@ mod tests {
     fn cross_collection_alias() {
         let mut tokens = DesignTokens::new();
         let colors = tokens.add_collection("Colors", vec!["Default"]);
-        let blue_id = tokens.add_token(colors, "blue-500", TokenValue::Color(
-            Color::Srgb { r: 0.231, g: 0.510, b: 0.965, a: 1.0 }
-        ));
+        let blue_id = tokens.add_token(
+            colors,
+            "blue-500",
+            TokenValue::Color(Color::Srgb {
+                r: 0.231,
+                g: 0.510,
+                b: 0.965,
+                a: 1.0,
+            }),
+        );
         let components = tokens.add_collection("Components", vec!["Default"]);
         let _alias_id = tokens.add_alias_token(components, "button.bg", colors, blue_id);
         let alias_tok_id = tokens.collections[1].tokens[0].id;

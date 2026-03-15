@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
 
-use ode_format::node::NodeKind;
 use ode_format::Document;
+use ode_format::node::NodeKind;
 use ode_import::figma::convert::FigmaConverter;
 use ode_import::figma::types::FigmaFileResponse;
 

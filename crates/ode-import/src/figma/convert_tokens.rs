@@ -72,7 +72,12 @@ impl IdGenerator {
     }
 
     /// Register a variable's Figma ID mapped to its (CollectionId, TokenId).
-    fn register_variable(&mut self, figma_var_id: &str, collection_id: CollectionId, token_id: TokenId) {
+    fn register_variable(
+        &mut self,
+        figma_var_id: &str,
+        collection_id: CollectionId,
+        token_id: TokenId,
+    ) {
         self.variable_lookup
             .insert(figma_var_id.to_string(), (collection_id, token_id));
     }
@@ -190,11 +195,7 @@ fn convert_collection(vc: &FigmaVariableCollection, id_gen: &mut IdGenerator) ->
 /// The `id_gen` is used read-only here (Phase 2) to look up already-registered
 /// mode IDs and alias targets.
 fn convert_variable(var: &FigmaVariable, id_gen: &IdGenerator) -> Token {
-    let tok_id = id_gen
-        .token_map
-        .get(&var.id)
-        .copied()
-        .unwrap_or(0);
+    let tok_id = id_gen.token_map.get(&var.id).copied().unwrap_or(0);
 
     // Parse values for each mode.
     let mut values: HashMap<ModeId, TokenResolve> = HashMap::new();
@@ -208,12 +209,7 @@ fn convert_variable(var: &FigmaVariable, id_gen: &IdGenerator) -> Token {
     let group = extract_group(&var.name);
 
     // Extract the leaf name: "colors/primary/500" → "500"
-    let name = var
-        .name
-        .rsplit('/')
-        .next()
-        .unwrap_or(&var.name)
-        .to_string();
+    let name = var.name.rsplit('/').next().unwrap_or(&var.name).to_string();
 
     Token {
         id: tok_id,
@@ -294,19 +290,13 @@ fn parse_variable_value(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ode_format::color::Color;
     use crate::figma::types::{FigmaVariableCollection, FigmaVariableMode};
+    use ode_format::color::Color;
 
     /// Helper: build a minimal FigmaVariablesMeta.
     fn make_meta(
         collections: Vec<(&str, &str, Vec<(&str, &str)>, Vec<&str>)>,
-        variables: Vec<(
-            &str,
-            &str,
-            &str,
-            &str,
-            Vec<(&str, serde_json::Value)>,
-        )>,
+        variables: Vec<(&str, &str, &str, &str, Vec<(&str, serde_json::Value)>)>,
     ) -> FigmaVariablesMeta {
         let mut vc_map = HashMap::new();
         for (id, name, modes, var_ids) in &collections {
@@ -376,8 +366,14 @@ mod tests {
                 "VC:1",
                 "COLOR",
                 vec![
-                    ("1:0", serde_json::json!({"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0})),
-                    ("1:1", serde_json::json!({"r": 0.0, "g": 0.0, "b": 1.0, "a": 1.0})),
+                    (
+                        "1:0",
+                        serde_json::json!({"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}),
+                    ),
+                    (
+                        "1:1",
+                        serde_json::json!({"r": 0.0, "g": 0.0, "b": 1.0, "a": 1.0}),
+                    ),
                 ],
             )],
         );
@@ -397,18 +393,16 @@ mod tests {
     #[test]
     fn convert_color_variable() {
         let meta = make_meta(
-            vec![(
-                "VC:1",
-                "Colors",
-                vec![("1:0", "Default")],
-                vec!["V:1"],
-            )],
+            vec![("VC:1", "Colors", vec![("1:0", "Default")], vec!["V:1"])],
             vec![(
                 "V:1",
                 "red",
                 "VC:1",
                 "COLOR",
-                vec![("1:0", serde_json::json!({"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}))],
+                vec![(
+                    "1:0",
+                    serde_json::json!({"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}),
+                )],
             )],
         );
 
@@ -430,12 +424,7 @@ mod tests {
     #[test]
     fn convert_float_variable() {
         let meta = make_meta(
-            vec![(
-                "VC:1",
-                "Spacing",
-                vec![("1:0", "Default")],
-                vec!["V:1"],
-            )],
+            vec![("VC:1", "Spacing", vec![("1:0", "Default")], vec!["V:1"])],
             vec![(
                 "V:1",
                 "spacing-md",
@@ -455,12 +444,7 @@ mod tests {
     #[test]
     fn convert_boolean_variable_to_number() {
         let meta = make_meta(
-            vec![(
-                "VC:1",
-                "Flags",
-                vec![("1:0", "Default")],
-                vec!["V:1"],
-            )],
+            vec![("VC:1", "Flags", vec![("1:0", "Default")], vec!["V:1"])],
             vec![(
                 "V:1",
                 "is-dark",
@@ -480,12 +464,7 @@ mod tests {
     #[test]
     fn convert_string_variable() {
         let meta = make_meta(
-            vec![(
-                "VC:1",
-                "Strings",
-                vec![("1:0", "Default")],
-                vec!["V:1"],
-            )],
+            vec![("VC:1", "Strings", vec![("1:0", "Default")], vec!["V:1"])],
             vec![(
                 "V:1",
                 "greeting",
@@ -520,7 +499,10 @@ mod tests {
                     "red",
                     "VC:1",
                     "COLOR",
-                    vec![("1:0", serde_json::json!({"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}))],
+                    vec![(
+                        "1:0",
+                        serde_json::json!({"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}),
+                    )],
                 ),
                 (
                     "V:2",
@@ -562,10 +544,7 @@ mod tests {
             Some("colors/primary".to_string())
         );
         assert_eq!(extract_group("spacing"), None);
-        assert_eq!(
-            extract_group("a/b"),
-            Some("a".to_string())
-        );
+        assert_eq!(extract_group("a/b"), Some("a".to_string()));
     }
 
     #[test]
@@ -583,14 +562,20 @@ mod tests {
                     "red",
                     "VC:1",
                     "COLOR",
-                    vec![("1:0", serde_json::json!({"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}))],
+                    vec![(
+                        "1:0",
+                        serde_json::json!({"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}),
+                    )],
                 ),
                 (
                     "V:2",
                     "blue",
                     "VC:1",
                     "COLOR",
-                    vec![("1:0", serde_json::json!({"r": 0.0, "g": 0.0, "b": 1.0, "a": 1.0}))],
+                    vec![(
+                        "1:0",
+                        serde_json::json!({"r": 0.0, "g": 0.0, "b": 1.0, "a": 1.0}),
+                    )],
                 ),
             ],
         );
@@ -614,12 +599,7 @@ mod tests {
     #[test]
     fn boolean_false_converts_to_zero() {
         let meta = make_meta(
-            vec![(
-                "VC:1",
-                "Flags",
-                vec![("1:0", "Default")],
-                vec!["V:1"],
-            )],
+            vec![("VC:1", "Flags", vec![("1:0", "Default")], vec!["V:1"])],
             vec![(
                 "V:1",
                 "disabled",
@@ -651,8 +631,14 @@ mod tests {
                 "VC:1",
                 "COLOR",
                 vec![
-                    ("1:0", serde_json::json!({"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0})),
-                    ("1:1", serde_json::json!({"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0})),
+                    (
+                        "1:0",
+                        serde_json::json!({"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}),
+                    ),
+                    (
+                        "1:1",
+                        serde_json::json!({"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0}),
+                    ),
                 ],
             )],
         );

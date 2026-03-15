@@ -51,7 +51,7 @@ pub fn convert_blend_mode(s: &str, warnings: &mut Vec<ImportWarning>) -> BlendMo
             warnings.push(ImportWarning {
                 node_id: String::new(),
                 node_name: String::new(),
-                message: format!("Unsupported blend mode '{}', falling back to Normal", s),
+                message: format!("Unsupported blend mode '{s}', falling back to Normal"),
             });
             BlendMode::Normal
         }
@@ -59,7 +59,7 @@ pub fn convert_blend_mode(s: &str, warnings: &mut Vec<ImportWarning>) -> BlendMo
             warnings.push(ImportWarning {
                 node_id: String::new(),
                 node_name: String::new(),
-                message: format!("Unknown blend mode '{}', falling back to Normal", other),
+                message: format!("Unknown blend mode '{other}', falling back to Normal"),
             });
             BlendMode::Normal
         }
@@ -91,10 +91,7 @@ fn figma_vec_to_point(v: &FigmaVector) -> Point {
 ///
 /// Returns `None` for invisible paints or unsupported paint types (VIDEO,
 /// PATTERN, EMOJI) — the latter also emits a warning.
-pub fn convert_fill(
-    paint: &FigmaPaint,
-    warnings: &mut Vec<ImportWarning>,
-) -> Option<Fill> {
+pub fn convert_fill(paint: &FigmaPaint, warnings: &mut Vec<ImportWarning>) -> Option<Fill> {
     // Skip invisible paints.
     if paint.visible == Some(false) {
         return None;
@@ -118,10 +115,7 @@ pub fn convert_fill(
 }
 
 /// Inner paint conversion shared by fills and strokes.
-fn convert_paint(
-    paint: &FigmaPaint,
-    warnings: &mut Vec<ImportWarning>,
-) -> Option<Paint> {
+fn convert_paint(paint: &FigmaPaint, warnings: &mut Vec<ImportWarning>) -> Option<Paint> {
     match paint.paint_type.as_str() {
         "SOLID" => {
             let color = paint.color.as_ref()?;
@@ -131,9 +125,18 @@ fn convert_paint(
         }
         "GRADIENT_LINEAR" => {
             let stops = paint.gradient_stops.as_deref().unwrap_or_default();
-            let handles = paint.gradient_handle_positions.as_deref().unwrap_or_default();
-            let start = handles.first().map(figma_vec_to_point).unwrap_or(Point { x: 0.0, y: 0.5 });
-            let end = handles.get(1).map(figma_vec_to_point).unwrap_or(Point { x: 1.0, y: 0.5 });
+            let handles = paint
+                .gradient_handle_positions
+                .as_deref()
+                .unwrap_or_default();
+            let start = handles
+                .first()
+                .map(figma_vec_to_point)
+                .unwrap_or(Point { x: 0.0, y: 0.5 });
+            let end = handles
+                .get(1)
+                .map(figma_vec_to_point)
+                .unwrap_or(Point { x: 1.0, y: 0.5 });
             Some(Paint::LinearGradient {
                 stops: convert_gradient_stops(stops),
                 start,
@@ -142,10 +145,22 @@ fn convert_paint(
         }
         "GRADIENT_RADIAL" => {
             let stops = paint.gradient_stops.as_deref().unwrap_or_default();
-            let handles = paint.gradient_handle_positions.as_deref().unwrap_or_default();
-            let center = handles.first().map(figma_vec_to_point).unwrap_or(Point { x: 0.5, y: 0.5 });
-            let h1 = handles.get(1).map(figma_vec_to_point).unwrap_or(Point { x: 1.0, y: 0.5 });
-            let h2 = handles.get(2).map(figma_vec_to_point).unwrap_or(Point { x: 0.5, y: 1.0 });
+            let handles = paint
+                .gradient_handle_positions
+                .as_deref()
+                .unwrap_or_default();
+            let center = handles
+                .first()
+                .map(figma_vec_to_point)
+                .unwrap_or(Point { x: 0.5, y: 0.5 });
+            let h1 = handles
+                .get(1)
+                .map(figma_vec_to_point)
+                .unwrap_or(Point { x: 1.0, y: 0.5 });
+            let h2 = handles
+                .get(2)
+                .map(figma_vec_to_point)
+                .unwrap_or(Point { x: 0.5, y: 1.0 });
             let radius = Point {
                 x: ((h1.x - center.x).powi(2) + (h1.y - center.y).powi(2)).sqrt(),
                 y: ((h2.x - center.x).powi(2) + (h2.y - center.y).powi(2)).sqrt(),
@@ -158,9 +173,18 @@ fn convert_paint(
         }
         "GRADIENT_ANGULAR" => {
             let stops = paint.gradient_stops.as_deref().unwrap_or_default();
-            let handles = paint.gradient_handle_positions.as_deref().unwrap_or_default();
-            let center = handles.first().map(figma_vec_to_point).unwrap_or(Point { x: 0.5, y: 0.5 });
-            let h1 = handles.get(1).map(figma_vec_to_point).unwrap_or(Point { x: 1.0, y: 0.5 });
+            let handles = paint
+                .gradient_handle_positions
+                .as_deref()
+                .unwrap_or_default();
+            let center = handles
+                .first()
+                .map(figma_vec_to_point)
+                .unwrap_or(Point { x: 0.5, y: 0.5 });
+            let h1 = handles
+                .get(1)
+                .map(figma_vec_to_point)
+                .unwrap_or(Point { x: 1.0, y: 0.5 });
             let angle = (h1.y - center.y).atan2(h1.x - center.x).to_degrees();
             Some(Paint::AngularGradient {
                 stops: convert_gradient_stops(stops),
@@ -170,10 +194,22 @@ fn convert_paint(
         }
         "GRADIENT_DIAMOND" => {
             let stops = paint.gradient_stops.as_deref().unwrap_or_default();
-            let handles = paint.gradient_handle_positions.as_deref().unwrap_or_default();
-            let center = handles.first().map(figma_vec_to_point).unwrap_or(Point { x: 0.5, y: 0.5 });
-            let h1 = handles.get(1).map(figma_vec_to_point).unwrap_or(Point { x: 1.0, y: 0.5 });
-            let h2 = handles.get(2).map(figma_vec_to_point).unwrap_or(Point { x: 0.5, y: 1.0 });
+            let handles = paint
+                .gradient_handle_positions
+                .as_deref()
+                .unwrap_or_default();
+            let center = handles
+                .first()
+                .map(figma_vec_to_point)
+                .unwrap_or(Point { x: 0.5, y: 0.5 });
+            let h1 = handles
+                .get(1)
+                .map(figma_vec_to_point)
+                .unwrap_or(Point { x: 1.0, y: 0.5 });
+            let h2 = handles
+                .get(2)
+                .map(figma_vec_to_point)
+                .unwrap_or(Point { x: 0.5, y: 1.0 });
             let radius = Point {
                 x: ((h1.x - center.x).powi(2) + (h1.y - center.y).powi(2)).sqrt(),
                 y: ((h2.x - center.x).powi(2) + (h2.y - center.y).powi(2)).sqrt(),
@@ -200,10 +236,7 @@ fn convert_paint(
             warnings.push(ImportWarning {
                 node_id: String::new(),
                 node_name: String::new(),
-                message: format!(
-                    "Unsupported paint type '{}', skipping",
-                    paint.paint_type
-                ),
+                message: format!("Unsupported paint type '{}', skipping", paint.paint_type),
             });
             None
         }
@@ -211,7 +244,7 @@ fn convert_paint(
             warnings.push(ImportWarning {
                 node_id: String::new(),
                 node_name: String::new(),
-                message: format!("Unknown paint type '{}', skipping", other),
+                message: format!("Unknown paint type '{other}', skipping"),
             });
             None
         }
@@ -251,13 +284,15 @@ pub fn convert_stroke(
         Some("NONE") => StrokeCap::Butt,
         Some("ROUND") => StrokeCap::Round,
         Some("SQUARE") => StrokeCap::Square,
-        Some(arrow) if arrow.contains("ARROW") || arrow.starts_with("LINE_ARROW")
-            || arrow.starts_with("TRIANGLE_ARROW") =>
+        Some(arrow)
+            if arrow.contains("ARROW")
+                || arrow.starts_with("LINE_ARROW")
+                || arrow.starts_with("TRIANGLE_ARROW") =>
         {
             warnings.push(ImportWarning {
                 node_id: String::new(),
                 node_name: String::new(),
-                message: format!("Arrow cap '{}' not supported, falling back to Butt", arrow),
+                message: format!("Arrow cap '{arrow}' not supported, falling back to Butt"),
             });
             StrokeCap::Butt
         }
@@ -270,9 +305,7 @@ pub fn convert_stroke(
         _ => StrokeJoin::Miter,
     };
 
-    let miter_limit = miter_angle
-        .map(convert_miter)
-        .unwrap_or(4.0);
+    let miter_limit = miter_angle.map(convert_miter).unwrap_or(4.0);
 
     let dash = dashes.and_then(|d| {
         if d.is_empty() {
@@ -311,10 +344,7 @@ pub fn convert_stroke(
 /// Convert a Figma effect into an ODE `Effect`.
 ///
 /// Returns `None` for invisible effects or unsupported effect types.
-pub fn convert_effect(
-    effect: &FigmaEffect,
-    warnings: &mut Vec<ImportWarning>,
-) -> Option<Effect> {
+pub fn convert_effect(effect: &FigmaEffect, warnings: &mut Vec<ImportWarning>) -> Option<Effect> {
     if effect.visible == Some(false) {
         return None;
     }
@@ -376,10 +406,7 @@ pub fn convert_effect(
             warnings.push(ImportWarning {
                 node_id: String::new(),
                 node_name: String::new(),
-                message: format!(
-                    "Unsupported effect type '{}', skipping",
-                    effect.effect_type
-                ),
+                message: format!("Unsupported effect type '{}', skipping", effect.effect_type),
             });
             None
         }
@@ -387,7 +414,7 @@ pub fn convert_effect(
             warnings.push(ImportWarning {
                 node_id: String::new(),
                 node_name: String::new(),
-                message: format!("Unknown effect type '{}', skipping", other),
+                message: format!("Unknown effect type '{other}', skipping"),
             });
             None
         }
@@ -522,7 +549,15 @@ mod tests {
         match &fill.paint {
             Paint::Solid { color } => {
                 let c = color.value();
-                assert_eq!(c, Color::Srgb { r: 1.0, g: 0.0, b: 0.0, a: 1.0 });
+                assert_eq!(
+                    c,
+                    Color::Srgb {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0
+                    }
+                );
             }
             _ => panic!("Expected Solid"),
         }
@@ -542,12 +577,22 @@ mod tests {
             gradient_stops: Some(vec![
                 FigmaColorStop {
                     position: 0.0,
-                    color: FigmaColor { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+                    color: FigmaColor {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
                     bound_variables: None,
                 },
                 FigmaColorStop {
                     position: 1.0,
-                    color: FigmaColor { r: 0.0, g: 0.0, b: 1.0, a: 1.0 },
+                    color: FigmaColor {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    },
                     bound_variables: None,
                 },
             ]),
@@ -586,7 +631,12 @@ mod tests {
         let paint = FigmaPaint {
             paint_type: "SOLID".to_string(),
             visible: Some(false),
-            color: Some(FigmaColor { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }),
+            color: Some(FigmaColor {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
             ..Default::default()
         };
         assert!(convert_fill(&paint, &mut w).is_none());
@@ -600,7 +650,12 @@ mod tests {
         let mut w = empty_warnings();
         let effect = FigmaEffect {
             effect_type: "DROP_SHADOW".to_string(),
-            color: Some(FigmaColor { r: 0.0, g: 0.0, b: 0.0, a: 0.25 }),
+            color: Some(FigmaColor {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.25,
+            }),
             offset: Some(FigmaVector { x: 0.0, y: 4.0 }),
             radius: Some(8.0),
             spread: Some(0.0),
@@ -618,7 +673,12 @@ mod tests {
             } => {
                 assert_eq!(
                     color.value(),
-                    Color::Srgb { r: 0.0, g: 0.0, b: 0.0, a: 0.25 }
+                    Color::Srgb {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.25
+                    }
                 );
                 assert!((offset.y - 4.0).abs() < f32::EPSILON);
                 assert!((blur.value() - 8.0).abs() < f32::EPSILON);
@@ -720,7 +780,12 @@ mod tests {
         let mut w = empty_warnings();
         let paint = FigmaPaint {
             paint_type: "SOLID".to_string(),
-            color: Some(FigmaColor { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
+            color: Some(FigmaColor {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
             opacity: Some(1.0),
             ..Default::default()
         };
@@ -751,7 +816,12 @@ mod tests {
         let paint = FigmaPaint {
             paint_type: "SOLID".to_string(),
             visible: Some(false),
-            color: Some(FigmaColor { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
+            color: Some(FigmaColor {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
             ..Default::default()
         };
         assert!(convert_stroke(&paint, 1.0, None, None, None, None, None, &mut w).is_none());
@@ -762,7 +832,12 @@ mod tests {
         let mut w = empty_warnings();
         let paint = FigmaPaint {
             paint_type: "SOLID".to_string(),
-            color: Some(FigmaColor { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
+            color: Some(FigmaColor {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
             ..Default::default()
         };
         let stroke = convert_stroke(

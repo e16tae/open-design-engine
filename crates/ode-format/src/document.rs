@@ -1,7 +1,7 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use crate::node::{NodeId, NodeTree};
 use crate::tokens::DesignTokens;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 // ─── Version ───
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -20,10 +20,17 @@ pub struct ViewId(pub u32);
 // ─── Working Color Space ───
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum WorkingColorSpace { Srgb, DisplayP3, AdobeRgb, ProPhotoRgb }
+pub enum WorkingColorSpace {
+    Srgb,
+    DisplayP3,
+    AdobeRgb,
+    ProPhotoRgb,
+}
 
 impl Default for WorkingColorSpace {
-    fn default() -> Self { Self::Srgb }
+    fn default() -> Self {
+        Self::Srgb
+    }
 }
 
 // ─── Canvas ───

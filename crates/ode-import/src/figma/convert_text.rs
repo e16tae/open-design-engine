@@ -45,9 +45,7 @@ pub fn convert_text_style(fts: &FigmaTypeStyle) -> TextStyle {
             value: StyleValue::Raw(fts.line_height_px.unwrap_or(0.0)),
         },
         Some("FONT_SIZE_%") => LineHeight::Percent {
-            value: StyleValue::Raw(
-                fts.line_height_percent_font_size.unwrap_or(100.0) / 100.0,
-            ),
+            value: StyleValue::Raw(fts.line_height_percent_font_size.unwrap_or(100.0) / 100.0),
         },
         _ => LineHeight::Auto,
     };
@@ -70,7 +68,7 @@ pub fn convert_text_style(fts: &FigmaTypeStyle) -> TextStyle {
     let opentype_features = fts
         .opentype_flags
         .as_ref()
-        .map(|flags| convert_opentype_flags(flags))
+        .map(convert_opentype_flags)
         .unwrap_or_default();
 
     TextStyle {
@@ -212,22 +210,15 @@ fn figma_type_style_to_run_style(fts: &FigmaTypeStyle) -> TextRunStyle {
     });
 
     TextRunStyle {
-        font_family: fts
-            .font_family
-            .as_ref()
-            .map(|f| StyleValue::Raw(f.clone())),
-        font_weight: fts
-            .font_weight
-            .map(|w| StyleValue::Raw(w.round() as u16)),
+        font_family: fts.font_family.as_ref().map(|f| StyleValue::Raw(f.clone())),
+        font_weight: fts.font_weight.map(|w| StyleValue::Raw(w.round() as u16)),
         font_size: fts.font_size.map(StyleValue::Raw),
         line_height: fts.line_height_unit.as_deref().map(|unit| match unit {
             "PIXELS" => LineHeight::Fixed {
                 value: StyleValue::Raw(fts.line_height_px.unwrap_or(0.0)),
             },
             "FONT_SIZE_%" => LineHeight::Percent {
-                value: StyleValue::Raw(
-                    fts.line_height_percent_font_size.unwrap_or(100.0) / 100.0,
-                ),
+                value: StyleValue::Raw(fts.line_height_percent_font_size.unwrap_or(100.0) / 100.0),
             },
             _ => LineHeight::Auto,
         }),
@@ -243,10 +234,7 @@ fn figma_type_style_to_run_style(fts: &FigmaTypeStyle) -> TextRunStyle {
             "TITLE" => TextTransform::Capitalize,
             _ => TextTransform::None,
         }),
-        opentype_features: fts
-            .opentype_flags
-            .as_ref()
-            .map(|flags| convert_opentype_flags(flags)),
+        opentype_features: fts.opentype_flags.as_ref().map(convert_opentype_flags),
         variable_axes: None,
         fills,
     }

@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::document::{Document, Version, View, ViewId, ViewKind, WorkingColorSpace};
 use crate::node::{
-    BooleanOpData, BooleanOperation, ComponentDef, Constraints, FrameData, GroupData,
-    ImageData, InstanceData, LayoutConfig, LayoutSizing, Node, NodeId, NodeKind, NodeTree,
-    Override, SizingMode, StableId, TextData, Transform, VectorData,
+    BooleanOpData, BooleanOperation, ComponentDef, Constraints, FrameData, GroupData, ImageData,
+    InstanceData, LayoutConfig, LayoutSizing, Node, NodeId, NodeKind, NodeTree, Override,
+    SizingMode, StableId, TextData, Transform, VectorData,
 };
 use crate::style::{BlendMode, VisualProps};
 use crate::tokens::DesignTokens;
-use crate::typography::{TextRun, TextStyle, TextSizingMode};
+use crate::typography::{TextRun, TextSizingMode, TextStyle};
 
 // ─── Error ───
 
@@ -524,7 +524,7 @@ impl<'de> Deserialize<'de> for Document {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::{ViewId, Version};
+    use crate::document::{Version, ViewId};
     use crate::node::Node;
 
     #[test]

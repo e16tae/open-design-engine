@@ -1,12 +1,16 @@
-use std::path::Path;
-use ode_core::{Renderer, Scene, FontDatabase};
+use crate::output::*;
+use crate::validate::validate_json;
+use ode_core::{FontDatabase, Renderer, Scene};
 use ode_export::{PdfExporter, PngExporter, SvgExporter};
 use ode_format::Document;
 use ode_format::wire::DocumentWire;
-use crate::output::*;
-use crate::validate::validate_json;
+use std::path::Path;
 
-enum ExportFormat { Png, Svg, Pdf }
+enum ExportFormat {
+    Png,
+    Svg,
+    Pdf,
+}
 
 fn detect_format(output: &str, format_flag: Option<&str>) -> ExportFormat {
     if let Some(f) = format_flag {
@@ -25,17 +29,25 @@ fn detect_format(output: &str, format_flag: Option<&str>) -> ExportFormat {
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub fn load_input(file: &str) -> Result<String, (i32, ErrorResponse)> {
     if file == "-" {
         use std::io::Read;
         let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf)
-            .map_err(|e| (EXIT_IO, ErrorResponse::new("IO_ERROR", "io", &e.to_string())))?;
+        std::io::stdin().read_to_string(&mut buf).map_err(|e| {
+            (
+                EXIT_IO,
+                ErrorResponse::new("IO_ERROR", "io", &e.to_string()),
+            )
+        })?;
         Ok(buf)
     } else {
-        std::fs::read_to_string(file)
-            .map_err(|e| (EXIT_IO, ErrorResponse::new("IO_ERROR", "io",
-                &format!("failed to read '{file}': {e}"))))
+        std::fs::read_to_string(file).map_err(|e| {
+            (
+                EXIT_IO,
+                ErrorResponse::new("IO_ERROR", "io", &format!("failed to read '{file}': {e}")),
+            )
+        })
     }
 }
 
@@ -72,7 +84,10 @@ pub fn cmd_new(file: &str, name: Option<&str>, width: Option<f32>, height: Optio
 pub fn cmd_validate(file: &str) -> i32 {
     let json = match load_input(file) {
         Ok(j) => j,
-        Err((code, err)) => { print_json(&err); return code; }
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
     };
 
     let result = validate_json(&json);
@@ -86,7 +101,10 @@ pub fn cmd_validate(file: &str) -> i32 {
 pub fn cmd_build(file: &str, output: &str, format: Option<&str>) -> i32 {
     let json = match load_input(file) {
         Ok(j) => j,
-        Err((code, err)) => { print_json(&err); return code; }
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
     };
 
     let validation = validate_json(&json);
@@ -111,7 +129,10 @@ pub fn cmd_build(file: &str, output: &str, format: Option<&str>) -> i32 {
 pub fn cmd_render(file: &str, output: &str, format: Option<&str>) -> i32 {
     let json = match load_input(file) {
         Ok(j) => j,
-        Err((code, err)) => { print_json(&err); return code; }
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
     };
 
     let doc: Document = match serde_json::from_str(&json) {
@@ -125,12 +146,21 @@ pub fn cmd_render(file: &str, output: &str, format: Option<&str>) -> i32 {
     render_and_export(&doc, output, format, vec![])
 }
 
-fn render_and_export(doc: &Document, output: &str, format: Option<&str>, warnings: Vec<Warning>) -> i32 {
+fn render_and_export(
+    doc: &Document,
+    output: &str,
+    format: Option<&str>,
+    warnings: Vec<Warning>,
+) -> i32 {
     let font_db = FontDatabase::new_system();
     let scene = match Scene::from_document(doc, &font_db) {
         Ok(s) => s,
         Err(e) => {
-            print_json(&ErrorResponse::new("RENDER_FAILED", "render", &e.to_string()));
+            print_json(&ErrorResponse::new(
+                "RENDER_FAILED",
+                "render",
+                &e.to_string(),
+            ));
             return EXIT_PROCESS;
         }
     };
@@ -139,7 +169,11 @@ fn render_and_export(doc: &Document, output: &str, format: Option<&str>, warning
         ExportFormat::Svg => {
             // SVG: Scene IR → SVG directly (skip rasterization)
             if let Err(e) = SvgExporter::export(&scene, Path::new(output)) {
-                print_json(&ErrorResponse::new("EXPORT_FAILED", "export", &e.to_string()));
+                print_json(&ErrorResponse::new(
+                    "EXPORT_FAILED",
+                    "export",
+                    &e.to_string(),
+                ));
                 return EXIT_PROCESS;
             }
             let mut resp = OkResponse::with_render(output, scene.width as u32, scene.height as u32);
@@ -150,7 +184,11 @@ fn render_and_export(doc: &Document, output: &str, format: Option<&str>, warning
         ExportFormat::Pdf => {
             // PDF: Scene IR → PDF directly (skip rasterization)
             if let Err(e) = PdfExporter::export(&scene, Path::new(output)) {
-                print_json(&ErrorResponse::new("EXPORT_FAILED", "export", &e.to_string()));
+                print_json(&ErrorResponse::new(
+                    "EXPORT_FAILED",
+                    "export",
+                    &e.to_string(),
+                ));
                 return EXIT_PROCESS;
             }
             let mut resp = OkResponse::with_render(output, scene.width as u32, scene.height as u32);
@@ -163,12 +201,20 @@ fn render_and_export(doc: &Document, output: &str, format: Option<&str>, warning
             let pixmap = match Renderer::render(&scene) {
                 Ok(p) => p,
                 Err(e) => {
-                    print_json(&ErrorResponse::new("RENDER_FAILED", "render", &e.to_string()));
+                    print_json(&ErrorResponse::new(
+                        "RENDER_FAILED",
+                        "render",
+                        &e.to_string(),
+                    ));
                     return EXIT_PROCESS;
                 }
             };
             if let Err(e) = PngExporter::export(&pixmap, Path::new(output)) {
-                print_json(&ErrorResponse::new("EXPORT_FAILED", "export", &e.to_string()));
+                print_json(&ErrorResponse::new(
+                    "EXPORT_FAILED",
+                    "export",
+                    &e.to_string(),
+                ));
                 return EXIT_PROCESS;
             }
             let mut resp = OkResponse::with_render(output, pixmap.width(), pixmap.height());
@@ -184,7 +230,10 @@ fn render_and_export(doc: &Document, output: &str, format: Option<&str>, warning
 pub fn cmd_inspect(file: &str, full: bool) -> i32 {
     let json = match load_input(file) {
         Ok(j) => j,
-        Err((code, err)) => { print_json(&err); return code; }
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
     };
 
     let wire: DocumentWire = match serde_json::from_str(&json) {
@@ -234,24 +283,42 @@ struct TokensSummary {
 
 fn build_inspect_summary(wire: &DocumentWire) -> InspectSummary {
     use std::collections::HashMap;
-    let node_map: HashMap<&str, &ode_format::wire::NodeWire> = wire.nodes.iter()
+    let node_map: HashMap<&str, &ode_format::wire::NodeWire> = wire
+        .nodes
+        .iter()
         .map(|n| (n.stable_id.as_str(), n))
         .collect();
 
-    let tree = wire.canvas.iter()
-        .filter_map(|id| node_map.get(id.as_str()).map(|n| build_tree_node(n, &node_map)))
+    let tree = wire
+        .canvas
+        .iter()
+        .filter_map(|id| {
+            node_map
+                .get(id.as_str())
+                .map(|n| build_tree_node(n, &node_map))
+        })
         .collect();
 
     InspectSummary {
         name: wire.name.clone(),
-        format_version: format!("{}.{}.{}", wire.format_version.0, wire.format_version.1, wire.format_version.2),
+        format_version: format!(
+            "{}.{}.{}",
+            wire.format_version.0, wire.format_version.1, wire.format_version.2
+        ),
         working_color_space: serde_json::to_value(wire.working_color_space)
-            .ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default(),
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default(),
         node_count: wire.nodes.len(),
         canvas: wire.canvas.clone(),
         tree,
         tokens: TokensSummary {
-            collections: wire.tokens.collections.iter().map(|c| c.name.clone()).collect(),
+            collections: wire
+                .tokens
+                .collections
+                .iter()
+                .map(|c| c.name.clone())
+                .collect(),
             total_tokens: wire.tokens.collections.iter().map(|c| c.tokens.len()).sum(),
         },
     }
@@ -263,20 +330,37 @@ fn build_tree_node(
 ) -> InspectNode {
     use ode_format::wire::NodeKindWire;
     let (kind, size, child_ids) = match &node.kind {
-        NodeKindWire::Frame(d) => ("frame", Some([d.width, d.height]),
-            d.container.children.iter().map(|s| s.as_str()).collect::<Vec<_>>()),
-        NodeKindWire::Group(d) => ("group", None,
-            d.children.iter().map(|s| s.as_str()).collect()),
+        NodeKindWire::Frame(d) => (
+            "frame",
+            Some([d.width, d.height]),
+            d.container
+                .children
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>(),
+        ),
+        NodeKindWire::Group(d) => (
+            "group",
+            None,
+            d.children.iter().map(|s| s.as_str()).collect(),
+        ),
         NodeKindWire::Vector(_) => ("vector", None, vec![]),
-        NodeKindWire::BooleanOp(d) => ("boolean-op", None,
-            d.children.iter().map(|s| s.as_str()).collect()),
+        NodeKindWire::BooleanOp(d) => (
+            "boolean-op",
+            None,
+            d.children.iter().map(|s| s.as_str()).collect(),
+        ),
         NodeKindWire::Text(_) => ("text", None, vec![]),
         NodeKindWire::Image(_) => ("image", None, vec![]),
-        NodeKindWire::Instance(d) => ("instance", None,
-            d.container.children.iter().map(|s| s.as_str()).collect()),
+        NodeKindWire::Instance(d) => (
+            "instance",
+            None,
+            d.container.children.iter().map(|s| s.as_str()).collect(),
+        ),
     };
 
-    let children = child_ids.iter()
+    let children = child_ids
+        .iter()
         .filter_map(|id| node_map.get(id).map(|n| build_tree_node(n, node_map)))
         .collect();
 
@@ -313,7 +397,7 @@ pub fn cmd_import_figma(
                     print_json(&ErrorResponse::new(
                         "IO_ERROR",
                         "io",
-                        &format!("Failed to read input file: {}", e),
+                        &format!("Failed to read input file: {e}"),
                     ));
                     return EXIT_IO;
                 }
@@ -324,7 +408,7 @@ pub fn cmd_import_figma(
                     print_json(&ErrorResponse::new(
                         "PARSE_FAILED",
                         "parse",
-                        &format!("Failed to parse Figma JSON: {}", e),
+                        &format!("Failed to parse Figma JSON: {e}"),
                     ));
                     return EXIT_INPUT;
                 }
@@ -339,7 +423,7 @@ pub fn cmd_import_figma(
                     print_json(&ErrorResponse::new(
                         "INTERNAL",
                         "runtime",
-                        &format!("Failed to create async runtime: {}", e),
+                        &format!("Failed to create async runtime: {e}"),
                     ));
                     return EXIT_INTERNAL;
                 }
@@ -351,7 +435,7 @@ pub fn cmd_import_figma(
                     print_json(&ErrorResponse::new(
                         "API_ERROR",
                         "api",
-                        &format!("Failed to fetch Figma file: {}", e),
+                        &format!("Failed to fetch Figma file: {e}"),
                     ));
                     return EXIT_IO;
                 }
@@ -360,7 +444,7 @@ pub fn cmd_import_figma(
                 match rt.block_on(client.get_variables(&file_key)) {
                     Ok(v) => Some(v),
                     Err(e) => {
-                        eprintln!("Warning: Failed to fetch variables: {}", e);
+                        eprintln!("Warning: Failed to fetch variables: {e}");
                         None
                     }
                 }
@@ -384,7 +468,7 @@ pub fn cmd_import_figma(
             print_json(&ErrorResponse::new(
                 "CONVERT_FAILED",
                 "convert",
-                &format!("Conversion failed: {}", e),
+                &format!("Conversion failed: {e}"),
             ));
             return EXIT_PROCESS;
         }
@@ -408,7 +492,7 @@ pub fn cmd_import_figma(
             print_json(&ErrorResponse::new(
                 "INTERNAL",
                 "serialize",
-                &format!("Failed to serialize document: {}", e),
+                &format!("Failed to serialize document: {e}"),
             ));
             return EXIT_INTERNAL;
         }
@@ -425,7 +509,7 @@ pub fn cmd_import_figma(
             print_json(&ErrorResponse::new(
                 "IO_ERROR",
                 "io",
-                &format!("Failed to write output: {}", e),
+                &format!("Failed to write output: {e}"),
             ));
             EXIT_IO
         }
@@ -443,8 +527,11 @@ pub fn cmd_schema(topic: Option<&str>) -> i32 {
         Some("color") => schemars::schema_for!(ode_format::color::Color),
         Some(unknown) => {
             print_json(&ErrorResponse::new(
-                "INVALID_TOPIC", "schema",
-                &format!("unknown schema topic '{unknown}'. Available: document, node, paint, token, color"),
+                "INVALID_TOPIC",
+                "schema",
+                &format!(
+                    "unknown schema topic '{unknown}'. Available: document, node, paint, token, color"
+                ),
             ));
             return EXIT_INPUT;
         }

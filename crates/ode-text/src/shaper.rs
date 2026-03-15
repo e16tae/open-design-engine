@@ -1,5 +1,5 @@
-use ode_format::typography::TextTransform;
 use crate::TextError;
+use ode_format::typography::TextTransform;
 
 /// A shaped glyph with positioning information.
 pub struct ShapedGlyph {
@@ -76,16 +76,18 @@ pub fn shape_text(
     let infos = output.glyph_infos();
     let positions = output.glyph_positions();
 
-    let glyphs: Vec<ShapedGlyph> = infos.iter().zip(positions.iter()).map(|(info, pos)| {
-        ShapedGlyph {
+    let glyphs: Vec<ShapedGlyph> = infos
+        .iter()
+        .zip(positions.iter())
+        .map(|(info, pos)| ShapedGlyph {
             glyph_id: info.glyph_id as u16,
             cluster: info.cluster as usize,
             x_advance: pos.x_advance as f32 * scale + letter_spacing,
             y_advance: pos.y_advance as f32 * scale,
             x_offset: pos.x_offset as f32 * scale,
             y_offset: pos.y_offset as f32 * scale,
-        }
-    }).collect();
+        })
+        .collect();
 
     Ok(ShapedText {
         glyphs,

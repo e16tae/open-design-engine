@@ -1,13 +1,13 @@
 pub mod font_db;
-pub mod shaper;
-pub mod layout;
 pub mod glyph;
+pub mod layout;
+pub mod shaper;
 
 pub use font_db::FontDatabase;
 
 use ode_format::node::TextData;
 use ode_format::style::Fill;
-use ode_format::typography::{TextStyle, TextSizingMode};
+use ode_format::typography::{TextSizingMode, TextStyle};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -54,10 +54,7 @@ pub struct ResolvedRunStyle {
 }
 
 /// Main entry point: process a TextData node into positioned glyph outlines.
-pub fn process_text(
-    data: &TextData,
-    font_db: &FontDatabase,
-) -> Result<ProcessedText, TextError> {
+pub fn process_text(data: &TextData, font_db: &FontDatabase) -> Result<ProcessedText, TextError> {
     let default_style = &data.default_style;
 
     // If content is empty, return empty result
@@ -74,17 +71,28 @@ pub fn process_text(
     let runs = if data.runs.is_empty() {
         vec![(0, data.content.len(), default_style.clone())]
     } else {
-        data.runs.iter().map(|run| {
-            let resolved = resolve_run_style(&run.style, default_style);
-            (run.start.min(data.content.len()), run.end.min(data.content.len()), resolved)
-        }).collect()
+        data.runs
+            .iter()
+            .map(|run| {
+                let resolved = resolve_run_style(&run.style, default_style);
+                (
+                    run.start.min(data.content.len()),
+                    run.end.min(data.content.len()),
+                    resolved,
+                )
+            })
+            .collect()
     };
 
     // Find font for the default style
     let family = default_style.font_family.value();
     let weight = default_style.font_weight.value();
-    let font_data = font_db.find_font(&family, weight)
-        .ok_or_else(|| TextError::FontNotFound { family: family.clone(), weight })?;
+    let font_data = font_db
+        .find_font(&family, weight)
+        .ok_or_else(|| TextError::FontNotFound {
+            family: family.clone(),
+            weight,
+        })?;
 
     // Shape text
     let font_size = default_style.font_size.value();
@@ -124,18 +132,19 @@ pub fn process_text(
             let run_index = find_run_index(&runs, positioned.cluster);
 
             // Get glyph outline
-            if let Some(outline) = glyph::get_glyph_outline(
-                &font_data,
-                positioned.glyph_id,
-                font_size,
-            )? {
+            if let Some(outline) =
+                glyph::get_glyph_outline(&font_data, positioned.glyph_id, font_size)?
+            {
                 // Translate to final position
                 let mut path = outline;
                 // Flip Y (font coords are Y-up, canvas is Y-down) and translate
                 path.apply_affine(kurbo::Affine::new([
-                    1.0, 0.0,
-                    0.0, -1.0,
-                    positioned.x as f64, positioned.y as f64,
+                    1.0,
+                    0.0,
+                    0.0,
+                    -1.0,
+                    positioned.x as f64,
+                    positioned.y as f64,
                 ]));
                 glyphs.push(PositionedGlyph { path, run_index });
             }
@@ -151,15 +160,29 @@ pub fn process_text(
             if line_width > 0.0 {
                 let thickness = (font_size * 0.07).max(1.0);
 
-                if matches!(decoration, ode_format::typography::TextDecoration::Underline | ode_format::typography::TextDecoration::Both) {
+                if matches!(
+                    decoration,
+                    ode_format::typography::TextDecoration::Underline
+                        | ode_format::typography::TextDecoration::Both
+                ) {
                     let y = line.baseline_y + font_size * 0.15;
                     let rect = make_rect_path(line_start_x, y, line_width, thickness);
-                    decorations.push(DecorationRect { path: rect, run_index: 0 });
+                    decorations.push(DecorationRect {
+                        path: rect,
+                        run_index: 0,
+                    });
                 }
-                if matches!(decoration, ode_format::typography::TextDecoration::Strikethrough | ode_format::typography::TextDecoration::Both) {
+                if matches!(
+                    decoration,
+                    ode_format::typography::TextDecoration::Strikethrough
+                        | ode_format::typography::TextDecoration::Both
+                ) {
                     let y = line.baseline_y - font_size * 0.3;
                     let rect = make_rect_path(line_start_x, y, line_width, thickness);
-                    decorations.push(DecorationRect { path: rect, run_index: 0 });
+                    decorations.push(DecorationRect {
+                        path: rect,
+                        run_index: 0,
+                    });
                 }
             }
         }
@@ -179,18 +202,39 @@ fn resolve_run_style(
     default: &TextStyle,
 ) -> TextStyle {
     TextStyle {
-        font_family: run_style.font_family.clone().unwrap_or_else(|| default.font_family.clone()),
-        font_weight: run_style.font_weight.clone().unwrap_or_else(|| default.font_weight.clone()),
-        font_size: run_style.font_size.clone().unwrap_or_else(|| default.font_size.clone()),
-        line_height: run_style.line_height.clone().unwrap_or_else(|| default.line_height.clone()),
-        letter_spacing: run_style.letter_spacing.clone().unwrap_or_else(|| default.letter_spacing.clone()),
+        font_family: run_style
+            .font_family
+            .clone()
+            .unwrap_or_else(|| default.font_family.clone()),
+        font_weight: run_style
+            .font_weight
+            .clone()
+            .unwrap_or_else(|| default.font_weight.clone()),
+        font_size: run_style
+            .font_size
+            .clone()
+            .unwrap_or_else(|| default.font_size.clone()),
+        line_height: run_style
+            .line_height
+            .clone()
+            .unwrap_or_else(|| default.line_height.clone()),
+        letter_spacing: run_style
+            .letter_spacing
+            .clone()
+            .unwrap_or_else(|| default.letter_spacing.clone()),
         paragraph_spacing: default.paragraph_spacing.clone(),
         text_align: default.text_align,
         vertical_align: default.vertical_align,
         decoration: run_style.decoration.unwrap_or(default.decoration),
         transform: run_style.transform.unwrap_or(default.transform),
-        opentype_features: run_style.opentype_features.clone().unwrap_or_else(|| default.opentype_features.clone()),
-        variable_axes: run_style.variable_axes.clone().unwrap_or_else(|| default.variable_axes.clone()),
+        opentype_features: run_style
+            .opentype_features
+            .clone()
+            .unwrap_or_else(|| default.opentype_features.clone()),
+        variable_axes: run_style
+            .variable_axes
+            .clone()
+            .unwrap_or_else(|| default.variable_axes.clone()),
     }
 }
 

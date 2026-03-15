@@ -1,11 +1,11 @@
 use std::ops::{Index, IndexMut};
 
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
-use slotmap::{new_key_type, SlotMap};
+use serde::{Deserialize, Serialize};
+use slotmap::{SlotMap, new_key_type};
 
-use crate::style::{VisualProps, BlendMode, Fill, Stroke, Effect};
-use crate::typography::{TextStyle, TextRun, TextSizingMode};
+use crate::style::{BlendMode, Effect, Fill, Stroke, VisualProps};
+use crate::typography::{TextRun, TextSizingMode, TextStyle};
 
 // ─── IDs ───
 
@@ -48,7 +48,10 @@ impl NodeTree {
     /// Find a node by its stable_id (linear scan).
     /// For hot paths, build a `HashMap<&str, NodeId>` index instead.
     pub fn find_by_stable_id(&self, stable_id: &str) -> Option<NodeId> {
-        self.0.iter().find(|(_, n)| n.stable_id == stable_id).map(|(id, _)| id)
+        self.0
+            .iter()
+            .find(|(_, n)| n.stable_id == stable_id)
+            .map(|(id, _)| id)
     }
 }
 
@@ -62,7 +65,9 @@ impl PartialEq for NodeTree {
         let mut b: Vec<_> = other.0.values().map(|n| (&n.stable_id, n)).collect();
         a.sort_by_key(|(id, _)| *id);
         b.sort_by_key(|(id, _)| *id);
-        a.iter().zip(b.iter()).all(|((ia, na), (ib, nb))| ia == ib && na == nb)
+        a.iter()
+            .zip(b.iter())
+            .all(|((ia, na), (ib, nb))| ia == ib && na == nb)
     }
 }
 
@@ -84,12 +89,24 @@ impl IndexMut<NodeId> for NodeTree {
 /// 2D affine transform matrix: [a, b, c, d, tx, ty]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Transform {
-    pub a: f32, pub b: f32, pub c: f32, pub d: f32, pub tx: f32, pub ty: f32,
+    pub a: f32,
+    pub b: f32,
+    pub c: f32,
+    pub d: f32,
+    pub tx: f32,
+    pub ty: f32,
 }
 
 impl Default for Transform {
     fn default() -> Self {
-        Self { a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: 0.0 }
+        Self {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx: 0.0,
+            ty: 0.0,
+        }
     }
 }
 
@@ -97,7 +114,12 @@ impl Default for Transform {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum ConstraintAxis { Fixed, Scale, Stretch, Center }
+pub enum ConstraintAxis {
+    Fixed,
+    Scale,
+    Stretch,
+    Center,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Constraints {
@@ -143,7 +165,9 @@ pub enum LayoutDirection {
 }
 
 impl Default for LayoutDirection {
-    fn default() -> Self { Self::Horizontal }
+    fn default() -> Self {
+        Self::Horizontal
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -156,7 +180,9 @@ pub enum PrimaryAxisAlign {
 }
 
 impl Default for PrimaryAxisAlign {
-    fn default() -> Self { Self::Start }
+    fn default() -> Self {
+        Self::Start
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -170,7 +196,9 @@ pub enum CounterAxisAlign {
 }
 
 impl Default for CounterAxisAlign {
-    fn default() -> Self { Self::Start }
+    fn default() -> Self {
+        Self::Start
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -187,7 +215,12 @@ pub struct LayoutPadding {
 
 impl Default for LayoutPadding {
     fn default() -> Self {
-        Self { top: 0.0, right: 0.0, bottom: 0.0, left: 0.0 }
+        Self {
+            top: 0.0,
+            right: 0.0,
+            bottom: 0.0,
+            left: 0.0,
+        }
     }
 }
 
@@ -199,7 +232,9 @@ pub enum LayoutWrap {
 }
 
 impl Default for LayoutWrap {
-    fn default() -> Self { Self::NoWrap }
+    fn default() -> Self {
+        Self::NoWrap
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -211,7 +246,9 @@ pub enum SizingMode {
 }
 
 impl Default for SizingMode {
-    fn default() -> Self { Self::Fixed }
+    fn default() -> Self {
+        Self::Fixed
+    }
 }
 
 /// Per-child layout sizing overrides within an auto-layout container.
@@ -238,40 +275,62 @@ pub struct LayoutSizing {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum BooleanOperation { Union, Subtract, Intersect, Exclude }
+pub enum BooleanOperation {
+    Union,
+    Subtract,
+    Intersect,
+    Exclude,
+}
 
 // ─── VectorPath ───
 
 /// Serializable path representation.
 /// Conversion to/from kurbo::BezPath lives in ode-core::path.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VectorPath {
     pub segments: Vec<PathSegment>,
     pub closed: bool,
 }
 
-impl Default for VectorPath {
-    fn default() -> Self {
-        Self { segments: vec![], closed: false }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum PathSegment {
-    MoveTo { x: f32, y: f32 },
-    LineTo { x: f32, y: f32 },
-    QuadTo { x1: f32, y1: f32, x: f32, y: f32 },
-    CurveTo { x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32 },
+    MoveTo {
+        x: f32,
+        y: f32,
+    },
+    LineTo {
+        x: f32,
+        y: f32,
+    },
+    QuadTo {
+        x1: f32,
+        y1: f32,
+        x: f32,
+        y: f32,
+    },
+    CurveTo {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        x: f32,
+        y: f32,
+    },
     Close,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum FillRule { NonZero, EvenOdd }
+pub enum FillRule {
+    NonZero,
+    EvenOdd,
+}
 
 impl Default for FillRule {
-    fn default() -> Self { Self::NonZero }
+    fn default() -> Self {
+        Self::NonZero
+    }
 }
 
 // ─── NodeKind ───
@@ -380,9 +439,13 @@ pub struct BooleanOpData {
     pub children: Vec<NodeId>,
 }
 
-fn default_clips_content() -> bool { true }
+fn default_clips_content() -> bool {
+    true
+}
 
-fn default_text_size() -> f32 { 100.0 }
+fn default_text_size() -> f32 {
+    100.0
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TextData {
@@ -412,14 +475,39 @@ pub struct ImageData {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Override {
-    Fills { target: StableId, fills: Vec<Fill> },
-    Strokes { target: StableId, strokes: Vec<Stroke> },
-    Effects { target: StableId, effects: Vec<Effect> },
-    Opacity { target: StableId, opacity: f32 },
-    BlendMode { target: StableId, blend_mode: BlendMode },
-    Visible { target: StableId, visible: bool },
-    Size { target: StableId, width: Option<f32>, height: Option<f32> },
-    TextContent { target: StableId, content: String },
+    Fills {
+        target: StableId,
+        fills: Vec<Fill>,
+    },
+    Strokes {
+        target: StableId,
+        strokes: Vec<Stroke>,
+    },
+    Effects {
+        target: StableId,
+        effects: Vec<Effect>,
+    },
+    Opacity {
+        target: StableId,
+        opacity: f32,
+    },
+    BlendMode {
+        target: StableId,
+        blend_mode: BlendMode,
+    },
+    Visible {
+        target: StableId,
+        visible: bool,
+    },
+    Size {
+        target: StableId,
+        width: Option<f32>,
+        height: Option<f32>,
+    },
+    TextContent {
+        target: StableId,
+        content: String,
+    },
 }
 
 impl Override {
@@ -479,8 +567,12 @@ pub struct Node {
     pub kind: NodeKind,
 }
 
-fn default_opacity() -> f32 { 1.0 }
-fn default_visible() -> bool { true }
+fn default_opacity() -> f32 {
+    1.0
+}
+fn default_visible() -> bool {
+    true
+}
 
 // Note: `impl Default for BlendMode` is in style.rs (where BlendMode is defined).
 
@@ -521,7 +613,9 @@ impl Node {
             visible: true,
             constraints: None,
             layout_sizing: None,
-            kind: NodeKind::Group(Box::new(GroupData { children: Vec::new() })),
+            kind: NodeKind::Group(Box::new(GroupData {
+                children: Vec::new(),
+            })),
         }
     }
 
@@ -597,7 +691,9 @@ impl Node {
             visible: true,
             constraints: None,
             layout_sizing: None,
-            kind: NodeKind::Image(Box::new(ImageData { visual: VisualProps::default() })),
+            kind: NodeKind::Image(Box::new(ImageData {
+                visual: VisualProps::default(),
+            })),
         }
     }
 
@@ -627,7 +723,7 @@ impl Node {
 mod tests {
     use super::*;
     use crate::color::Color;
-    use crate::style::{StyleValue, Paint, Fill, BlendMode};
+    use crate::style::{BlendMode, Fill, Paint, StyleValue};
 
     #[test]
     fn create_frame_node() {
@@ -683,7 +779,9 @@ mod tests {
         let mut node = Node::new_frame("Colored", 100.0, 100.0);
         if let NodeKind::Frame(ref mut data) = node.kind {
             data.visual.fills.push(Fill {
-                paint: Paint::Solid { color: StyleValue::Raw(Color::black()) },
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(Color::black()),
+                },
                 opacity: StyleValue::Raw(1.0),
                 blend_mode: BlendMode::Normal,
                 visible: true,
@@ -699,7 +797,14 @@ mod tests {
             segments: vec![
                 PathSegment::MoveTo { x: 0.0, y: 0.0 },
                 PathSegment::LineTo { x: 100.0, y: 0.0 },
-                PathSegment::CurveTo { x1: 100.0, y1: 50.0, x2: 50.0, y2: 100.0, x: 0.0, y: 100.0 },
+                PathSegment::CurveTo {
+                    x1: 100.0,
+                    y1: 50.0,
+                    x2: 50.0,
+                    y2: 100.0,
+                    x: 0.0,
+                    y: 100.0,
+                },
                 PathSegment::Close,
             ],
             closed: true,
@@ -766,7 +871,12 @@ mod tests {
             direction: LayoutDirection::Vertical,
             primary_axis_align: PrimaryAxisAlign::SpaceBetween,
             counter_axis_align: CounterAxisAlign::Stretch,
-            padding: LayoutPadding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 },
+            padding: LayoutPadding {
+                top: 8.0,
+                right: 16.0,
+                bottom: 8.0,
+                left: 16.0,
+            },
             item_spacing: 12.0,
             wrap: LayoutWrap::Wrap,
         };
@@ -836,7 +946,14 @@ mod tests {
             Override::Fills {
                 target: "node-1".to_string(),
                 fills: vec![Fill {
-                    paint: Paint::Solid { color: StyleValue::Raw(Color::Srgb { r: 0.0, g: 0.0, b: 1.0, a: 1.0 }) },
+                    paint: Paint::Solid {
+                        color: StyleValue::Raw(Color::Srgb {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 1.0,
+                            a: 1.0,
+                        }),
+                    },
                     opacity: StyleValue::Raw(1.0),
                     blend_mode: BlendMode::Normal,
                     visible: true,
@@ -899,12 +1016,10 @@ mod tests {
             source_component: "comp-1".to_string(),
             width: Some(150.0),
             height: None,
-            overrides: vec![
-                Override::Visible {
-                    target: "child-1".to_string(),
-                    visible: false,
-                },
-            ],
+            overrides: vec![Override::Visible {
+                target: "child-1".to_string(),
+                visible: false,
+            }],
         };
         let json = serde_json::to_string(&inst).unwrap();
         let parsed: InstanceData = serde_json::from_str(&json).unwrap();

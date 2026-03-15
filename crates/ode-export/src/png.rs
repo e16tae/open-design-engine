@@ -13,7 +13,9 @@ impl PngExporter {
 
     /// Encode a Pixmap to PNG bytes in memory.
     pub fn export_bytes(pixmap: &tiny_skia::Pixmap) -> Result<Vec<u8>, ExportError> {
-        pixmap.encode_png().map_err(|e| ExportError::PngEncodeFailed(e.to_string()))
+        pixmap
+            .encode_png()
+            .map_err(|e| ExportError::PngEncodeFailed(e.to_string()))
     }
 }
 

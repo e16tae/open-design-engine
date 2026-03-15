@@ -1,5 +1,5 @@
-use ode_format::typography::{LineHeight, TextAlign, TextSizingMode, VerticalAlign};
 use crate::shaper::ShapedText;
+use ode_format::typography::{LineHeight, TextAlign, TextSizingMode, VerticalAlign};
 
 /// A positioned glyph within a laid-out line.
 pub struct PositionedShapedGlyph {
@@ -25,6 +25,7 @@ pub struct LayoutedText {
 }
 
 /// Layout shaped text into lines with alignment.
+#[allow(clippy::too_many_arguments)]
 pub fn layout_text(
     shaped: &ShapedText,
     text: &str,
@@ -36,7 +37,8 @@ pub fn layout_text(
     container_height: f32,
     sizing_mode: TextSizingMode,
 ) -> LayoutedText {
-    let line_height = compute_line_height(&line_height_spec, font_size, shaped.ascent, shaped.descent);
+    let line_height =
+        compute_line_height(&line_height_spec, font_size, shaped.ascent, shaped.descent);
 
     // Find line break opportunities using unicode-linebreak
     let break_opportunities = unicode_linebreak::linebreaks(text).collect::<Vec<_>>();
@@ -60,7 +62,8 @@ pub fn layout_text(
         }
 
         // Check if adding this glyph would exceed available width
-        let would_overflow = current_width + glyph_width > available_width && !current_line.is_empty();
+        let would_overflow =
+            current_width + glyph_width > available_width && !current_line.is_empty();
 
         if would_overflow && available_width.is_finite() {
             // Find the best break point in the current line
@@ -69,7 +72,8 @@ pub fn layout_text(
                 let rest = current_line.split_off(break_idx);
                 lines.push(std::mem::take(&mut current_line));
                 current_line = rest;
-                current_width = current_line.iter()
+                current_width = current_line
+                    .iter()
                     .map(|&idx| shaped.glyphs[idx].x_advance)
                     .sum();
             } else {
@@ -116,7 +120,8 @@ pub fn layout_text(
         let baseline_y = vertical_offset + shaped.ascent + line_idx as f32 * line_height;
 
         // Compute line width
-        let line_width: f32 = line_glyph_indices.iter()
+        let line_width: f32 = line_glyph_indices
+            .iter()
             .map(|&idx| shaped.glyphs[idx].x_advance)
             .sum();
 
@@ -135,7 +140,7 @@ pub fn layout_text(
             && line_idx < lines.len() - 1  // Don't justify last line
             && available_width.is_finite()
         {
-            let space_count = count_spaces_in_line(&line_glyph_indices, shaped, text);
+            let space_count = count_spaces_in_line(line_glyph_indices, shaped, text);
             if space_count > 0 {
                 (available_width - line_width) / space_count as f32
             } else {
@@ -195,12 +200,7 @@ pub fn layout_text(
     }
 }
 
-fn compute_line_height(
-    spec: &LineHeight,
-    font_size: f32,
-    ascent: f32,
-    descent: f32,
-) -> f32 {
+fn compute_line_height(spec: &LineHeight, font_size: f32, ascent: f32, descent: f32) -> f32 {
     match spec {
         LineHeight::Auto => {
             // Typical auto line height: 1.2x the font size, or ascent - descent
@@ -222,7 +222,9 @@ fn find_break_point(
     for i in (1..line_indices.len()).rev() {
         let glyph_cluster = shaped.glyphs[line_indices[i]].cluster;
         for &(offset, opp) in break_opportunities {
-            if offset == glyph_cluster && matches!(opp, unicode_linebreak::BreakOpportunity::Allowed) {
+            if offset == glyph_cluster
+                && matches!(opp, unicode_linebreak::BreakOpportunity::Allowed)
+            {
                 return Some(i);
             }
         }
@@ -230,12 +232,9 @@ fn find_break_point(
     None
 }
 
-fn count_spaces_in_line(
-    line_indices: &[usize],
-    shaped: &ShapedText,
-    text: &str,
-) -> usize {
-    line_indices.iter()
+fn count_spaces_in_line(line_indices: &[usize], shaped: &ShapedText, text: &str) -> usize {
+    line_indices
+        .iter()
         .filter(|&&idx| {
             let cluster = shaped.glyphs[idx].cluster;
             text.as_bytes().get(cluster) == Some(&b' ')

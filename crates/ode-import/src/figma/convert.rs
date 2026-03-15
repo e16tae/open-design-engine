@@ -8,14 +8,16 @@ use std::collections::HashMap;
 use ode_format::document::{Document, Version, WorkingColorSpace};
 use ode_format::node::{
     BooleanOpData, BooleanOperation, ComponentDef, ContainerProps, FillRule, FrameData, GroupData,
-    ImageData, InstanceData, Node, NodeId, NodeKind, NodeTree, PathSegment,
-    SizingMode, StableId, TextData, VectorData, VectorPath,
+    ImageData, InstanceData, Node, NodeId, NodeKind, NodeTree, PathSegment, SizingMode, StableId,
+    TextData, VectorData, VectorPath,
 };
 use ode_format::style::{BlendMode, VisualProps};
 use ode_format::tokens::DesignTokens;
 use ode_format::typography::TextSizingMode;
 
-use super::convert_layout::{convert_constraints, convert_layout_config, convert_layout_sizing, convert_transform};
+use super::convert_layout::{
+    convert_constraints, convert_layout_config, convert_layout_sizing, convert_transform,
+};
 use super::convert_style::{convert_blend_mode, convert_effect, convert_fill, convert_stroke};
 use super::convert_text::{convert_sizing_mode, convert_text_runs, convert_text_style};
 use super::convert_tokens::convert_all_variables;
@@ -161,12 +163,12 @@ impl<'a> ConvertContext<'a> {
         // ── Skip types ───────────────────────────────────────────────
         match node_type {
             "SLICE" => return None,
-            "STICKY" | "SHAPE_WITH_TEXT" | "CONNECTOR" | "STAMP" | "CODE_BLOCK"
-            | "WIDGET" | "EMBED" | "LINK_UNFURL" | "MEDIA" => {
+            "STICKY" | "SHAPE_WITH_TEXT" | "CONNECTOR" | "STAMP" | "CODE_BLOCK" | "WIDGET"
+            | "EMBED" | "LINK_UNFURL" | "MEDIA" => {
                 self.warnings.push(ImportWarning {
                     node_id: fnode.id.clone(),
                     node_name: fnode.name.clone(),
-                    message: format!("FigJam node type '{}' is not supported, skipping", node_type),
+                    message: format!("FigJam node type '{node_type}' is not supported, skipping"),
                 });
                 return None;
             }
@@ -211,10 +213,7 @@ impl<'a> ConvertContext<'a> {
 
         let visible = fnode.visible.unwrap_or(true);
 
-        let constraints = fnode
-            .constraints
-            .as_ref()
-            .map(convert_constraints);
+        let constraints = fnode.constraints.as_ref().map(convert_constraints);
 
         // Layout sizing: only set if the parent has auto-layout.
         let layout_sizing = if parent_has_auto_layout(parent) {
@@ -261,20 +260,14 @@ impl<'a> ConvertContext<'a> {
                     self.convert_vector(fnode)
                 }
             }
-            "BOOLEAN_OPERATION" => {
-                self.convert_boolean_op(fnode, nodes)
-            }
-            "TEXT" => {
-                self.convert_text(fnode)
-            }
-            "INSTANCE" => {
-                self.convert_instance(fnode, nodes)
-            }
+            "BOOLEAN_OPERATION" => self.convert_boolean_op(fnode, nodes),
+            "TEXT" => self.convert_text(fnode),
+            "INSTANCE" => self.convert_instance(fnode, nodes),
             _ => {
                 self.warnings.push(ImportWarning {
                     node_id: fnode.id.clone(),
                     node_name: fnode.name.clone(),
-                    message: format!("Unknown node type '{}', skipping", node_type),
+                    message: format!("Unknown node type '{node_type}', skipping"),
                 });
                 return None;
             }
@@ -369,7 +362,7 @@ impl<'a> ConvertContext<'a> {
                         self.warnings.push(ImportWarning {
                             node_id: fnode.id.clone(),
                             node_name: fnode.name.clone(),
-                            message: format!("Failed to parse SVG path: {}", e),
+                            message: format!("Failed to parse SVG path: {e}"),
                         });
                     }
                 }
@@ -493,8 +486,7 @@ impl<'a> ConvertContext<'a> {
                 node_id: fnode.id.clone(),
                 node_name: fnode.name.clone(),
                 message: format!(
-                    "Instance references unknown component '{}', converting as Frame",
-                    component_id
+                    "Instance references unknown component '{component_id}', converting as Frame"
                 ),
             });
             self.convert_frame(fnode, nodes, None)
@@ -516,9 +508,9 @@ impl<'a> ConvertContext<'a> {
             return None;
         }
 
-        let has_strokes = fnode.strokes.as_ref().map_or(false, |s| !s.is_empty());
-        let has_effects = fnode.effects.as_ref().map_or(false, |e| !e.is_empty());
-        let has_children = fnode.children.as_ref().map_or(false, |c| !c.is_empty());
+        let has_strokes = fnode.strokes.as_ref().is_some_and(|s| !s.is_empty());
+        let has_effects = fnode.effects.as_ref().is_some_and(|e| !e.is_empty());
+        let has_children = fnode.children.as_ref().is_some_and(|c| !c.is_empty());
 
         if has_strokes || has_effects || has_children {
             return None;
@@ -627,7 +619,7 @@ fn node_corner_radius(fnode: &FigmaNode) -> [f32; 4] {
 fn parent_has_auto_layout(parent: Option<&FigmaNode>) -> bool {
     parent
         .and_then(|p| p.layout_mode.as_deref())
-        .map_or(false, |m| m != "NONE")
+        .is_some_and(|m| m != "NONE")
 }
 
 /// Generate a rectangle path from width, height, and optional corner radii.
@@ -650,7 +642,7 @@ fn make_ellipse_path(w: f32, h: f32) -> VectorPath {
     let rx = w / 2.0;
     let ry = h / 2.0;
     // Kappa constant for circular arc approximation.
-    let k: f32 = 0.5522847498;
+    let k: f32 = 0.552_284_8;
     let kx = rx * k;
     let ky = ry * k;
 

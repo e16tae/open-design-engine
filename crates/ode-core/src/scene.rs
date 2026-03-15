@@ -37,9 +37,7 @@ pub enum RenderCommand {
         transform: tiny_skia::Transform,
     },
     /// Apply an effect to the current layer.
-    ApplyEffect {
-        effect: ResolvedEffect,
-    },
+    ApplyEffect { effect: ResolvedEffect },
 }
 
 /// Token-resolved paint. The renderer never sees StyleValue or TokenRef.
@@ -76,10 +74,28 @@ pub struct ResolvedGradientStop {
 
 #[derive(Debug, Clone)]
 pub enum ResolvedEffect {
-    DropShadow { color: Color, offset_x: f32, offset_y: f32, blur_radius: f32, spread: f32, shape: kurbo::BezPath },
-    InnerShadow { color: Color, offset_x: f32, offset_y: f32, blur_radius: f32, spread: f32, shape: kurbo::BezPath },
-    LayerBlur { radius: f32 },
-    BackgroundBlur { radius: f32 },
+    DropShadow {
+        color: Color,
+        offset_x: f32,
+        offset_y: f32,
+        blur_radius: f32,
+        spread: f32,
+        shape: kurbo::BezPath,
+    },
+    InnerShadow {
+        color: Color,
+        offset_x: f32,
+        offset_y: f32,
+        blur_radius: f32,
+        spread: f32,
+        shape: kurbo::BezPath,
+    },
+    LayerBlur {
+        radius: f32,
+    },
+    BackgroundBlur {
+        radius: f32,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -125,8 +141,14 @@ mod tests {
         let _solid = ResolvedPaint::Solid(Color::white());
         let _linear = ResolvedPaint::LinearGradient {
             stops: vec![
-                ResolvedGradientStop { position: 0.0, color: Color::black() },
-                ResolvedGradientStop { position: 1.0, color: Color::white() },
+                ResolvedGradientStop {
+                    position: 0.0,
+                    color: Color::black(),
+                },
+                ResolvedGradientStop {
+                    position: 1.0,
+                    color: Color::white(),
+                },
             ],
             start: kurbo::Point::new(0.0, 0.0),
             end: kurbo::Point::new(100.0, 0.0),

@@ -3,9 +3,9 @@ use serde::Serialize;
 // ─── Exit codes ───
 
 pub const EXIT_OK: i32 = 0;
-pub const EXIT_INPUT: i32 = 1;    // parse + validation errors
-pub const EXIT_IO: i32 = 2;       // file I/O errors
-pub const EXIT_PROCESS: i32 = 3;  // render + export errors
+pub const EXIT_INPUT: i32 = 1; // parse + validation errors
+pub const EXIT_IO: i32 = 2; // file I/O errors
+pub const EXIT_PROCESS: i32 = 3; // render + export errors
 pub const EXIT_INTERNAL: i32 = 4; // unexpected errors
 
 // ─── Success responses ───
@@ -25,11 +25,23 @@ pub struct OkResponse {
 
 impl OkResponse {
     pub fn with_path(path: &str) -> Self {
-        Self { status: "ok", path: Some(path.to_string()), width: None, height: None, warnings: vec![] }
+        Self {
+            status: "ok",
+            path: Some(path.to_string()),
+            width: None,
+            height: None,
+            warnings: vec![],
+        }
     }
 
     pub fn with_render(path: &str, width: u32, height: u32) -> Self {
-        Self { status: "ok", path: Some(path.to_string()), width: Some(width), height: Some(height), warnings: vec![] }
+        Self {
+            status: "ok",
+            path: Some(path.to_string()),
+            width: Some(width),
+            height: Some(height),
+            warnings: vec![],
+        }
     }
 }
 
