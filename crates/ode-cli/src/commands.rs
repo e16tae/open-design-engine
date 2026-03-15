@@ -540,3 +540,354 @@ pub fn cmd_schema(topic: Option<&str>) -> i32 {
     println!("{}", serde_json::to_string_pretty(&schema).unwrap());
     EXIT_OK
 }
+
+// ─── ode tokens list ───
+
+pub fn cmd_tokens_list(file: &str) -> i32 {
+    let json = match load_input(file) {
+        Ok(j) => j,
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
+    };
+
+    let doc: Document = match serde_json::from_str(&json) {
+        Ok(d) => d,
+        Err(e) => {
+            print_json(&ErrorResponse::new("PARSE_FAILED", "parse", &e.to_string()));
+            return EXIT_INPUT;
+        }
+    };
+
+    let mut collections_out: Vec<TokensListCollection> = Vec::new();
+
+    for coll in &doc.tokens.collections {
+        let active_mode = doc.tokens.active_modes.get(&coll.id).copied();
+        let modes: Vec<TokensListMode> = coll
+            .modes
+            .iter()
+            .map(|m| TokensListMode {
+                id: m.id,
+                name: m.name.clone(),
+                active: active_mode == Some(m.id),
+                is_default: coll.default_mode == m.id,
+            })
+            .collect();
+
+        let tokens: Vec<TokensListToken> = coll
+            .tokens
+            .iter()
+            .map(|t| {
+                let values: std::collections::HashMap<String, String> = t
+                    .values
+                    .iter()
+                    .map(|(mode_id, resolve)| {
+                        let mode_name = coll
+                            .modes
+                            .iter()
+                            .find(|m| m.id == *mode_id)
+                            .map(|m| m.name.clone())
+                            .unwrap_or_else(|| format!("mode-{mode_id}"));
+                        let value_str = match resolve {
+                            ode_format::tokens::TokenResolve::Direct(tv) => format_token_value(tv),
+                            ode_format::tokens::TokenResolve::Alias(tref) => {
+                                format!(
+                                    "-> collection:{} token:{}",
+                                    tref.collection_id, tref.token_id
+                                )
+                            }
+                        };
+                        (mode_name, value_str)
+                    })
+                    .collect();
+
+                TokensListToken {
+                    id: t.id,
+                    name: t.name.clone(),
+                    group: t.group.clone(),
+                    values,
+                }
+            })
+            .collect();
+
+        collections_out.push(TokensListCollection {
+            id: coll.id,
+            name: coll.name.clone(),
+            modes,
+            tokens,
+        });
+    }
+
+    let result = TokensListResult {
+        status: "ok",
+        collections: collections_out,
+    };
+    print_json(&result);
+    EXIT_OK
+}
+
+#[derive(serde::Serialize)]
+struct TokensListResult {
+    status: &'static str,
+    collections: Vec<TokensListCollection>,
+}
+
+#[derive(serde::Serialize)]
+struct TokensListCollection {
+    id: u32,
+    name: String,
+    modes: Vec<TokensListMode>,
+    tokens: Vec<TokensListToken>,
+}
+
+#[derive(serde::Serialize)]
+struct TokensListMode {
+    id: u32,
+    name: String,
+    active: bool,
+    is_default: bool,
+}
+
+#[derive(serde::Serialize)]
+struct TokensListToken {
+    id: u32,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group: Option<String>,
+    values: std::collections::HashMap<String, String>,
+}
+
+fn format_token_value(tv: &ode_format::tokens::TokenValue) -> String {
+    match tv {
+        ode_format::tokens::TokenValue::Color(c) => match c {
+            ode_format::color::Color::Srgb { r, g, b, a } => {
+                format!("srgb({r:.3}, {g:.3}, {b:.3}, {a:.3})")
+            }
+            _ => format!("{c:?}"),
+        },
+        ode_format::tokens::TokenValue::Number(n) => format!("{n}"),
+        ode_format::tokens::TokenValue::Dimension { value, unit } => {
+            format!("{value}{unit:?}")
+        }
+        ode_format::tokens::TokenValue::FontFamily(f) => f.clone(),
+        ode_format::tokens::TokenValue::FontWeight(w) => format!("{w}"),
+        ode_format::tokens::TokenValue::Duration(d) => format!("{d}ms"),
+        ode_format::tokens::TokenValue::CubicBezier(pts) => {
+            format!(
+                "cubic-bezier({}, {}, {}, {})",
+                pts[0], pts[1], pts[2], pts[3]
+            )
+        }
+        ode_format::tokens::TokenValue::String(s) => format!("\"{s}\""),
+    }
+}
+
+// ─── ode tokens resolve ───
+
+pub fn cmd_tokens_resolve(file: &str, collection: &str, token: &str) -> i32 {
+    let json = match load_input(file) {
+        Ok(j) => j,
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
+    };
+
+    let doc: Document = match serde_json::from_str(&json) {
+        Ok(d) => d,
+        Err(e) => {
+            print_json(&ErrorResponse::new("PARSE_FAILED", "parse", &e.to_string()));
+            return EXIT_INPUT;
+        }
+    };
+
+    // Find collection by name or ID
+    let coll = match find_collection(&doc.tokens, collection) {
+        Some(c) => c,
+        None => {
+            print_json(&ErrorResponse::new(
+                "NOT_FOUND",
+                "tokens",
+                &format!("Collection '{collection}' not found"),
+            ));
+            return EXIT_INPUT;
+        }
+    };
+
+    // Find token by name or ID
+    let tok = match find_token(coll, token) {
+        Some(t) => t,
+        None => {
+            print_json(&ErrorResponse::new(
+                "NOT_FOUND",
+                "tokens",
+                &format!("Token '{token}' not found in collection '{}'", coll.name),
+            ));
+            return EXIT_INPUT;
+        }
+    };
+
+    // Resolve
+    match doc.tokens.resolve(coll.id, tok.id) {
+        Ok(value) => {
+            let result = TokenResolveResult {
+                status: "ok",
+                collection_name: coll.name.clone(),
+                token_name: tok.name.clone(),
+                value: format_token_value(&value),
+            };
+            print_json(&result);
+            EXIT_OK
+        }
+        Err(e) => {
+            print_json(&ErrorResponse::new(
+                "RESOLVE_FAILED",
+                "tokens",
+                &format!("Failed to resolve token: {e}"),
+            ));
+            EXIT_PROCESS
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct TokenResolveResult {
+    status: &'static str,
+    collection_name: String,
+    token_name: String,
+    value: String,
+}
+
+// ─── ode tokens set-mode ───
+
+pub fn cmd_tokens_set_mode(file: &str, collection: &str, mode: &str, output: Option<&str>) -> i32 {
+    let json = match load_input(file) {
+        Ok(j) => j,
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
+    };
+
+    let mut doc: Document = match serde_json::from_str(&json) {
+        Ok(d) => d,
+        Err(e) => {
+            print_json(&ErrorResponse::new("PARSE_FAILED", "parse", &e.to_string()));
+            return EXIT_INPUT;
+        }
+    };
+
+    // Find collection by name or ID
+    let coll = match find_collection(&doc.tokens, collection) {
+        Some(c) => c,
+        None => {
+            print_json(&ErrorResponse::new(
+                "NOT_FOUND",
+                "tokens",
+                &format!("Collection '{collection}' not found"),
+            ));
+            return EXIT_INPUT;
+        }
+    };
+
+    // Find mode by name or ID
+    let mode_entry = match find_mode(coll, mode) {
+        Some(m) => m,
+        None => {
+            print_json(&ErrorResponse::new(
+                "NOT_FOUND",
+                "tokens",
+                &format!("Mode '{mode}' not found in collection '{}'", coll.name),
+            ));
+            return EXIT_INPUT;
+        }
+    };
+
+    let coll_id = coll.id;
+    let mode_id = mode_entry.id;
+    let coll_name = coll.name.clone();
+    let mode_name = mode_entry.name.clone();
+
+    // Set the mode
+    doc.tokens.set_active_mode(coll_id, mode_id);
+
+    // Serialize and write
+    let out_path = output.unwrap_or(file);
+    let json_out = match serde_json::to_string_pretty(&doc) {
+        Ok(j) => j,
+        Err(e) => {
+            print_json(&ErrorResponse::new("INTERNAL", "serialize", &e.to_string()));
+            return EXIT_INTERNAL;
+        }
+    };
+
+    if let Err(e) = std::fs::write(out_path, &json_out) {
+        print_json(&ErrorResponse::new("IO_ERROR", "io", &e.to_string()));
+        return EXIT_IO;
+    }
+
+    let result = SetModeResult {
+        status: "ok",
+        collection_name: coll_name,
+        mode_name,
+        path: out_path.to_string(),
+    };
+    print_json(&result);
+    EXIT_OK
+}
+
+#[derive(serde::Serialize)]
+struct SetModeResult {
+    status: &'static str,
+    collection_name: String,
+    mode_name: String,
+    path: String,
+}
+
+// ─── Token Lookup Helpers ───
+
+fn find_collection<'a>(
+    tokens: &'a ode_format::tokens::DesignTokens,
+    name_or_id: &str,
+) -> Option<&'a ode_format::tokens::TokenCollection> {
+    // Try by name first
+    if let Some(c) = tokens.collections.iter().find(|c| c.name == name_or_id) {
+        return Some(c);
+    }
+    // Try by ID
+    if let Ok(id) = name_or_id.parse::<u32>() {
+        return tokens.collections.iter().find(|c| c.id == id);
+    }
+    None
+}
+
+fn find_token<'a>(
+    coll: &'a ode_format::tokens::TokenCollection,
+    name_or_id: &str,
+) -> Option<&'a ode_format::tokens::Token> {
+    // Try by name first
+    if let Some(t) = coll.tokens.iter().find(|t| t.name == name_or_id) {
+        return Some(t);
+    }
+    // Try by ID
+    if let Ok(id) = name_or_id.parse::<u32>() {
+        return coll.tokens.iter().find(|t| t.id == id);
+    }
+    None
+}
+
+fn find_mode<'a>(
+    coll: &'a ode_format::tokens::TokenCollection,
+    name_or_id: &str,
+) -> Option<&'a ode_format::tokens::Mode> {
+    // Try by name first
+    if let Some(m) = coll.modes.iter().find(|m| m.name == name_or_id) {
+        return Some(m);
+    }
+    // Try by ID
+    if let Ok(id) = name_or_id.parse::<u32>() {
+        return coll.modes.iter().find(|m| m.id == id);
+    }
+    None
+}
