@@ -1,8 +1,8 @@
 pub mod types;
 pub mod convert;
 pub mod client;
-mod convert_style;
-mod convert_text;
-mod convert_layout;
-mod convert_tokens;
+pub(crate) mod convert_style;
+pub(crate) mod convert_text;
+pub(crate) mod convert_layout;
+pub(crate) mod convert_tokens;
 pub(crate) mod svg_path;
