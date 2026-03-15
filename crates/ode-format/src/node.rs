@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use slotmap::{SlotMap, new_key_type};
 
-use crate::style::{BlendMode, Effect, Fill, Stroke, VisualProps};
+use crate::style::{BlendMode, Effect, Fill, ImageSource, Stroke, VisualProps};
 use crate::typography::{TextRun, TextSizingMode, TextStyle};
 
 // ─── IDs ───
@@ -468,6 +468,15 @@ pub struct TextData {
 pub struct ImageData {
     #[serde(default)]
     pub visual: VisualProps,
+    /// The image source — embedded bytes or external path
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<ImageSource>,
+    /// Display width (from node's bounding box)
+    #[serde(default)]
+    pub width: f32,
+    /// Display height (from node's bounding box)
+    #[serde(default)]
+    pub height: f32,
 }
 
 /// Target a node within the component tree by its stable_id.
@@ -680,7 +689,7 @@ impl Node {
         }
     }
 
-    pub fn new_image(name: &str) -> Self {
+    pub fn new_image(name: &str, width: f32, height: f32) -> Self {
         Self {
             id: NodeId::default(),
             stable_id: nanoid::nanoid!(),
@@ -693,6 +702,9 @@ impl Node {
             layout_sizing: None,
             kind: NodeKind::Image(Box::new(ImageData {
                 visual: VisualProps::default(),
+                source: None,
+                width,
+                height,
             })),
         }
     }
@@ -1053,5 +1065,77 @@ mod tests {
 
         assert_eq!(tree.find_by_stable_id("find-me"), Some(expected_id));
         assert_eq!(tree.find_by_stable_id("nonexistent"), None);
+    }
+
+    // ─── Image Data Tests ───
+
+    #[test]
+    fn image_data_serde_roundtrip_embedded() {
+        use crate::style::ImageSource;
+
+        let img = ImageData {
+            visual: VisualProps::default(),
+            source: Some(ImageSource::Embedded {
+                data: vec![0x89, 0x50, 0x4E, 0x47],
+            }),
+            width: 200.0,
+            height: 150.0,
+        };
+        let json = serde_json::to_string(&img).unwrap();
+        let parsed: ImageData = serde_json::from_str(&json).unwrap();
+        assert_eq!(img, parsed);
+        assert!(json.contains("embedded"));
+    }
+
+    #[test]
+    fn image_data_serde_roundtrip_linked() {
+        use crate::style::ImageSource;
+
+        let img = ImageData {
+            visual: VisualProps::default(),
+            source: Some(ImageSource::Linked {
+                path: "images/photo.png".to_string(),
+            }),
+            width: 400.0,
+            height: 300.0,
+        };
+        let json = serde_json::to_string(&img).unwrap();
+        let parsed: ImageData = serde_json::from_str(&json).unwrap();
+        assert_eq!(img, parsed);
+        assert!(json.contains("linked"));
+    }
+
+    #[test]
+    fn image_data_backward_compat_no_source() {
+        // Old ImageData JSON without source/width/height
+        let json = r#"{"visual":{}}"#;
+        let img: ImageData = serde_json::from_str(json).unwrap();
+        assert!(img.source.is_none());
+        assert!((img.width - 0.0).abs() < f32::EPSILON);
+        assert!((img.height - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn image_data_source_none_not_serialized() {
+        let img = ImageData {
+            visual: VisualProps::default(),
+            source: None,
+            width: 100.0,
+            height: 100.0,
+        };
+        let json = serde_json::to_string(&img).unwrap();
+        assert!(!json.contains("source"));
+    }
+
+    #[test]
+    fn new_image_constructor_sets_dimensions() {
+        let node = Node::new_image("Photo", 640.0, 480.0);
+        if let NodeKind::Image(ref data) = node.kind {
+            assert!((data.width - 640.0).abs() < f32::EPSILON);
+            assert!((data.height - 480.0).abs() < f32::EPSILON);
+            assert!(data.source.is_none());
+        } else {
+            panic!("Expected Image node");
+        }
     }
 }
