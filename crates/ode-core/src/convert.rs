@@ -18,10 +18,16 @@ type StableIdIndex<'a> = HashMap<&'a str, NodeId>;
 
 impl Scene {
     /// Convert a Document into a Scene.
-    ///
-    /// The `font_db` is used to resolve fonts for text rendering.
-    /// Pass `&FontDatabase::new()` if no text rendering is needed.
     pub fn from_document(doc: &Document, font_db: &FontDatabase) -> Result<Self, ConvertError> {
+        Self::from_document_with_resize(doc, font_db, &crate::layout::ResizeMap::new())
+    }
+
+    /// Convert a Document into a Scene with optional frame resize overrides.
+    pub fn from_document_with_resize(
+        doc: &Document,
+        font_db: &FontDatabase,
+        resize_map: &crate::layout::ResizeMap,
+    ) -> Result<Self, ConvertError> {
         if doc.canvas.is_empty() {
             return Err(ConvertError::NoCanvasRoots);
         }
@@ -33,12 +39,15 @@ impl Scene {
             .map(|(nid, node)| (node.stable_id.as_str(), nid))
             .collect();
 
-        // Compute auto layout positions (reuse stable_id_index)
-        let layout_map = crate::layout::compute_layout(doc, &stable_id_index);
+        // Compute layout (auto layout + constraints)
+        let layout_map = crate::layout::compute_layout(doc, &stable_id_index, resize_map);
 
-        // Determine scene size from first canvas root
+        // If root is resized, use the resize dimensions for scene size
         let first_root = doc.canvas[0];
-        let (width, height) = get_frame_size(&doc.nodes[first_root], layout_map.get(&first_root));
+        let (width, height) = resize_map
+            .get(&first_root)
+            .map(|&(w, h)| (w, h))
+            .unwrap_or_else(|| get_frame_size(&doc.nodes[first_root], layout_map.get(&first_root)));
 
         let mut commands = Vec::new();
         let identity = tiny_skia::Transform::identity();
@@ -139,7 +148,7 @@ fn convert_node(
             )?;
         } else if let NodeKind::Image(ref img_data) = node.kind {
             // Image nodes: emit DrawImage first, then visual overlays (strokes/effects)
-            emit_image(img_data, current_transform, commands);
+            emit_image(img_data, current_transform, commands, layout_rect);
             let node_path = get_node_path(doc, node, layout_rect);
             emit_visual(
                 visual,
@@ -302,8 +311,13 @@ fn emit_image(
     img_data: &ode_format::node::ImageData,
     current_transform: tiny_skia::Transform,
     commands: &mut Vec<RenderCommand>,
+    layout_rect: Option<&crate::layout::LayoutRect>,
 ) {
-    if img_data.width <= 0.0 || img_data.height <= 0.0 {
+    let (w, h) = layout_rect
+        .map(|r| (r.width, r.height))
+        .unwrap_or((img_data.width, img_data.height));
+
+    if w <= 0.0 || h <= 0.0 {
         return;
     }
 
@@ -326,8 +340,8 @@ fn emit_image(
 
     commands.push(RenderCommand::DrawImage {
         data: image_bytes,
-        width: img_data.width,
-        height: img_data.height,
+        width: w,
+        height: h,
         transform: current_transform,
     });
 }
@@ -858,8 +872,11 @@ fn get_node_path(
             }
         }
         NodeKind::Image(data) => {
-            if data.width > 0.0 && data.height > 0.0 {
-                Some(path::rounded_rect_path(data.width, data.height, [0.0; 4]))
+            let (w, h) = layout_rect
+                .map(|r| (r.width, r.height))
+                .unwrap_or((data.width, data.height));
+            if w > 0.0 && h > 0.0 {
+                Some(path::rounded_rect_path(w, h, [0.0; 4]))
             } else {
                 None
             }

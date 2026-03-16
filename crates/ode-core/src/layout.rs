@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use ode_format::document::Document;
 use ode_format::node::{
-    CounterAxisAlign, FrameData, LayoutConfig, LayoutDirection, LayoutWrap, Node, NodeId, NodeKind,
-    PrimaryAxisAlign, SizingMode,
+    ConstraintAxis, Constraints, CounterAxisAlign, FrameData, LayoutConfig, LayoutDirection,
+    LayoutWrap, Node, NodeId, NodeKind, PrimaryAxisAlign, SizingMode,
 };
 use taffy::prelude::*;
 
@@ -19,19 +19,82 @@ pub struct LayoutRect {
 /// Maps NodeIds to their computed layout rectangles.
 pub type LayoutMap = HashMap<NodeId, LayoutRect>;
 
-/// Compute auto layout for the entire document.
+/// Maps NodeIds to override sizes for constraint-based resize simulation.
+pub type ResizeMap = HashMap<NodeId, (f32, f32)>;
+
+// ─── Constraints Engine ───
+
+/// Apply a single axis constraint.
+fn apply_axis(axis: ConstraintAxis, pos: f32, size: f32, original: f32, current: f32) -> (f32, f32) {
+    let delta = current - original;
+    match axis {
+        ConstraintAxis::Start => (pos, size),
+        ConstraintAxis::End => (pos + delta, size),
+        ConstraintAxis::StartEnd => (pos, (size + delta).max(0.0)),
+        ConstraintAxis::Center => (pos + delta * 0.5, size),
+        ConstraintAxis::Scale => {
+            if original.abs() < f32::EPSILON {
+                (pos, size)
+            } else {
+                let ratio = current / original;
+                (pos * ratio, size * ratio)
+            }
+        }
+    }
+}
+
+/// Apply constraints to reposition/resize a child rect when its parent is resized.
+pub fn apply_constraints(
+    child: LayoutRect,
+    constraints: &Constraints,
+    original_parent: (f32, f32),
+    current_parent: (f32, f32),
+) -> LayoutRect {
+    let (new_x, new_w) = apply_axis(
+        constraints.horizontal,
+        child.x,
+        child.width,
+        original_parent.0,
+        current_parent.0,
+    );
+    let (new_y, new_h) = apply_axis(
+        constraints.vertical,
+        child.y,
+        child.height,
+        original_parent.1,
+        current_parent.1,
+    );
+    LayoutRect {
+        x: new_x,
+        y: new_y,
+        width: new_w,
+        height: new_h,
+    }
+}
+
+/// Compute layout for the entire document (auto layout + constraints).
 ///
-/// Walks the node tree depth-first, computing layout for each auto-layout
-/// container subtree using taffy. Returns a map of NodeId → LayoutRect
-/// for all nodes that participate in auto layout.
+/// Phase 1: Walks the node tree depth-first (bottom-up), computing layout for
+/// each auto-layout container subtree using taffy.
+/// Phase 2: Walks the node tree top-down, applying constraints to children of
+/// non-auto-layout containers that have been resized.
 pub fn compute_layout<'a>(
     doc: &'a Document,
     stable_id_index: &HashMap<&'a str, NodeId>,
+    resize_map: &ResizeMap,
 ) -> LayoutMap {
     let mut result = LayoutMap::new();
+
+    // Phase 1: Auto Layout (Taffy) — bottom-up
     for &root_id in &doc.canvas {
         walk_for_layout(doc, root_id, &mut result, stable_id_index);
     }
+
+    // Phase 2: Constraints — top-down
+    for &root_id in &doc.canvas {
+        walk_for_constraints(doc, root_id, resize_map, &mut result, stable_id_index);
+    }
+
     result
 }
 
@@ -447,13 +510,122 @@ fn get_container_available_size(
     }
 }
 
+// ─── Constraints Walk ───
+
+/// Get the design-time size of a container node (Frame or Instance).
+fn get_container_design_size(
+    node: &Node,
+    doc: &Document,
+    stable_id_index: &HashMap<&str, NodeId>,
+) -> Option<(f32, f32)> {
+    match &node.kind {
+        NodeKind::Frame(data) => Some((data.width, data.height)),
+        NodeKind::Instance(data) => {
+            let comp_size = stable_id_index
+                .get(data.source_component.as_str())
+                .and_then(|&comp_id| {
+                    if let NodeKind::Frame(ref fd) = doc.nodes[comp_id].kind {
+                        Some((fd.width, fd.height))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((0.0, 0.0));
+            Some((
+                data.width.unwrap_or(comp_size.0),
+                data.height.unwrap_or(comp_size.1),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Get the intrinsic size of any node (for building child_rect in constraints).
+fn get_node_intrinsic_size(node: &Node) -> (f32, f32) {
+    match &node.kind {
+        NodeKind::Frame(data) => (data.width, data.height),
+        NodeKind::Text(data) => (data.width, data.height),
+        NodeKind::Image(data) => (data.width, data.height),
+        NodeKind::Instance(data) => (data.width.unwrap_or(0.0), data.height.unwrap_or(0.0)),
+        _ => (0.0, 0.0),
+    }
+}
+
+/// Top-down depth-first walk: apply constraints to children of non-auto-layout containers.
+fn walk_for_constraints(
+    doc: &Document,
+    node_id: NodeId,
+    resize_map: &ResizeMap,
+    result: &mut LayoutMap,
+    stable_id_index: &HashMap<&str, NodeId>,
+) {
+    let node = &doc.nodes[node_id];
+
+    // Only Frame and Instance without auto-layout are constraint containers
+    let is_constraint_container = match &node.kind {
+        NodeKind::Frame(data) => data.container.layout.is_none(),
+        NodeKind::Instance(data) => data.container.layout.is_none(),
+        _ => false,
+    };
+
+    if is_constraint_container {
+        if let Some(design_size) = get_container_design_size(node, doc, stable_id_index) {
+            // Current size priority: resize_map > constraint result from parent > design size
+            let current_size = resize_map
+                .get(&node_id)
+                .copied()
+                .or_else(|| result.get(&node_id).map(|r| (r.width, r.height)))
+                .unwrap_or(design_size);
+
+            // Only apply if size actually changed
+            if (current_size.0 - design_size.0).abs() > f32::EPSILON
+                || (current_size.1 - design_size.1).abs() > f32::EPSILON
+            {
+                if let Some(children) = node.kind.children() {
+                    for &child_id in children {
+                        let child_node = &doc.nodes[child_id];
+                        let constraints = match child_node.constraints {
+                            Some(c) => c,
+                            None => continue,
+                        };
+                        if constraints.horizontal == ConstraintAxis::Start
+                            && constraints.vertical == ConstraintAxis::Start
+                        {
+                            continue;
+                        }
+
+                        let (iw, ih) = get_node_intrinsic_size(child_node);
+                        let child_rect = LayoutRect {
+                            x: child_node.transform.tx,
+                            y: child_node.transform.ty,
+                            width: iw,
+                            height: ih,
+                        };
+
+                        let new_rect =
+                            apply_constraints(child_rect, &constraints, design_size, current_size);
+                        result.insert(child_id, new_rect);
+                    }
+                }
+            }
+        }
+    }
+
+    // Recurse top-down: parent resolved before children
+    if let Some(children) = node.kind.children() {
+        for &child_id in children {
+            walk_for_constraints(doc, child_id, resize_map, result, stable_id_index);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ode_format::document::Document;
     use ode_format::node::{
-        CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding, LayoutSizing, LayoutWrap,
-        Node, NodeKind, PrimaryAxisAlign, SizingMode,
+        ConstraintAxis, Constraints, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding,
+        LayoutSizing, LayoutWrap, Node, NodeKind, PrimaryAxisAlign, SizingMode,
     };
 
     /// Helper: create a frame with auto layout enabled.
@@ -472,7 +644,7 @@ mod tests {
             .iter()
             .map(|(nid, node)| (node.stable_id.as_str(), nid))
             .collect();
-        compute_layout(doc, &index)
+        compute_layout(doc, &index, &ResizeMap::new())
     }
 
     fn default_config() -> LayoutConfig {
@@ -969,5 +1141,304 @@ mod tests {
             "inst.h = {}",
             inst_rect.height
         );
+    }
+
+    // ─── Constraints unit tests ───
+
+    #[test]
+    fn constraint_start_no_change() {
+        let child = LayoutRect { x: 20.0, y: 30.0, width: 50.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::Start,
+            vertical: ConstraintAxis::Start,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (300.0, 150.0));
+        assert!((result.x - 20.0).abs() < 0.01);
+        assert!((result.y - 30.0).abs() < 0.01);
+        assert!((result.width - 50.0).abs() < 0.01);
+        assert!((result.height - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn constraint_end_shifts_position() {
+        let child = LayoutRect { x: 130.0, y: 50.0, width: 50.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::End,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (300.0, 150.0));
+        assert!((result.x - 230.0).abs() < 0.01, "x = {}", result.x);
+        assert!((result.y - 100.0).abs() < 0.01, "y = {}", result.y);
+        assert!((result.width - 50.0).abs() < 0.01);
+        assert!((result.height - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn constraint_start_end_stretches() {
+        let child = LayoutRect { x: 20.0, y: 10.0, width: 160.0, height: 80.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::StartEnd,
+            vertical: ConstraintAxis::StartEnd,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (300.0, 150.0));
+        assert!((result.x - 20.0).abs() < 0.01);
+        assert!((result.y - 10.0).abs() < 0.01);
+        assert!((result.width - 260.0).abs() < 0.01, "w = {}", result.width);
+        assert!((result.height - 130.0).abs() < 0.01, "h = {}", result.height);
+    }
+
+    #[test]
+    fn constraint_start_end_clamps_to_zero() {
+        let child = LayoutRect { x: 20.0, y: 10.0, width: 50.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::StartEnd,
+            vertical: ConstraintAxis::StartEnd,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (10.0, 5.0));
+        assert!(result.width.abs() < 0.01, "w clamped to 0, got {}", result.width);
+        assert!(result.height.abs() < 0.01, "h clamped to 0, got {}", result.height);
+    }
+
+    #[test]
+    fn constraint_center_shifts_half_delta() {
+        let child = LayoutRect { x: 75.0, y: 30.0, width: 50.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::Center,
+            vertical: ConstraintAxis::Center,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (300.0, 150.0));
+        assert!((result.x - 125.0).abs() < 0.01, "x = {}", result.x);
+        assert!((result.y - 55.0).abs() < 0.01, "y = {}", result.y);
+        assert!((result.width - 50.0).abs() < 0.01);
+        assert!((result.height - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn constraint_scale_proportional() {
+        let child = LayoutRect { x: 40.0, y: 20.0, width: 80.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::Scale,
+            vertical: ConstraintAxis::Scale,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (400.0, 200.0));
+        assert!((result.x - 80.0).abs() < 0.01, "x = {}", result.x);
+        assert!((result.y - 40.0).abs() < 0.01, "y = {}", result.y);
+        assert!((result.width - 160.0).abs() < 0.01, "w = {}", result.width);
+        assert!((result.height - 80.0).abs() < 0.01, "h = {}", result.height);
+    }
+
+    #[test]
+    fn constraint_scale_zero_parent_degrades_to_start() {
+        let child = LayoutRect { x: 40.0, y: 20.0, width: 80.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::Scale,
+            vertical: ConstraintAxis::Scale,
+        };
+        let result = apply_constraints(child, &constraints, (0.0, 0.0), (300.0, 150.0));
+        assert!((result.x - 40.0).abs() < 0.01);
+        assert!((result.y - 20.0).abs() < 0.01);
+        assert!((result.width - 80.0).abs() < 0.01);
+        assert!((result.height - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn constraint_mixed_axes() {
+        let child = LayoutRect { x: 20.0, y: 50.0, width: 60.0, height: 30.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::StartEnd,
+            vertical: ConstraintAxis::End,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (300.0, 150.0));
+        assert!((result.x - 20.0).abs() < 0.01);
+        assert!((result.width - 160.0).abs() < 0.01, "w = {}", result.width);
+        assert!((result.y - 100.0).abs() < 0.01, "y = {}", result.y);
+        assert!((result.height - 30.0).abs() < 0.01);
+    }
+
+    // ─── Constraints integration tests ───
+
+    #[test]
+    fn constraints_reposition_on_resize() {
+        let mut doc = Document::new("Test");
+
+        let mut parent = Node::new_frame("Parent", 200.0, 100.0);
+        let mut child = Node::new_frame("Child", 30.0, 20.0);
+        child.transform.tx = 150.0;
+        child.transform.ty = 60.0;
+        child.constraints = Some(Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::End,
+        });
+
+        let c_id = doc.nodes.insert(child);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c_id];
+        }
+        let p_id = doc.nodes.insert(parent);
+        doc.canvas.push(p_id);
+
+        let mut resize_map = ResizeMap::new();
+        resize_map.insert(p_id, (300.0, 150.0));
+
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        let layout = compute_layout(&doc, &index, &resize_map);
+
+        let r = layout.get(&c_id).expect("Child should have layout rect");
+        assert!((r.x - 250.0).abs() < 0.1, "x = {}", r.x);
+        assert!((r.y - 110.0).abs() < 0.1, "y = {}", r.y);
+        assert!((r.width - 30.0).abs() < 0.1);
+        assert!((r.height - 20.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn constraints_ignored_for_auto_layout_frames() {
+        let mut doc = Document::new("Test");
+
+        let config = default_config();
+        let mut parent = make_auto_layout_frame("Parent", 200.0, 100.0, config);
+
+        let mut child = Node::new_frame("Child", 50.0, 40.0);
+        child.transform.tx = 10.0;
+        child.transform.ty = 10.0;
+        child.constraints = Some(Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::End,
+        });
+
+        let c_id = doc.nodes.insert(child);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c_id];
+        }
+        let p_id = doc.nodes.insert(parent);
+        doc.canvas.push(p_id);
+
+        let mut resize_map = ResizeMap::new();
+        resize_map.insert(p_id, (300.0, 150.0));
+
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        let layout = compute_layout(&doc, &index, &resize_map);
+
+        let r = layout.get(&c_id).expect("Child should have auto-layout rect");
+        assert!((r.x - 0.0).abs() < 0.1, "x = {} (auto layout, not constraint)", r.x);
+    }
+
+    #[test]
+    fn nested_constraints_top_down() {
+        let mut doc = Document::new("Test");
+
+        let mut grandparent = Node::new_frame("GP", 400.0, 200.0);
+
+        let mut parent = Node::new_frame("Parent", 200.0, 100.0);
+        parent.transform.tx = 100.0;
+        parent.transform.ty = 50.0;
+        parent.constraints = Some(Constraints {
+            horizontal: ConstraintAxis::StartEnd,
+            vertical: ConstraintAxis::Start,
+        });
+
+        let mut child = Node::new_frame("Child", 30.0, 20.0);
+        child.transform.tx = 150.0;
+        child.transform.ty = 60.0;
+        child.constraints = Some(Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::Start,
+        });
+
+        let c_id = doc.nodes.insert(child);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c_id];
+        }
+        let parent_id = doc.nodes.insert(parent);
+        if let NodeKind::Frame(ref mut data) = grandparent.kind {
+            data.container.children = vec![parent_id];
+        }
+        let gp_id = doc.nodes.insert(grandparent);
+        doc.canvas.push(gp_id);
+
+        let mut resize_map = ResizeMap::new();
+        resize_map.insert(gp_id, (600.0, 200.0));
+
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        let layout = compute_layout(&doc, &index, &resize_map);
+
+        let pr = layout.get(&parent_id).expect("Parent should have layout rect");
+        assert!((pr.x - 100.0).abs() < 0.1, "parent.x = {}", pr.x);
+        assert!((pr.width - 400.0).abs() < 0.1, "parent.w = {}", pr.width);
+
+        let cr = layout.get(&c_id).expect("Child should have layout rect");
+        assert!((cr.x - 350.0).abs() < 0.1, "child.x = {}", cr.x);
+    }
+
+    #[test]
+    fn no_resize_no_constraints_applied() {
+        let mut doc = Document::new("Test");
+
+        let mut parent = Node::new_frame("Parent", 200.0, 100.0);
+        let mut child = Node::new_frame("Child", 50.0, 40.0);
+        child.transform.tx = 20.0;
+        child.transform.ty = 10.0;
+        child.constraints = Some(Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::End,
+        });
+
+        let c_id = doc.nodes.insert(child);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c_id];
+        }
+        let p_id = doc.nodes.insert(parent);
+        doc.canvas.push(p_id);
+
+        let resize_map = ResizeMap::new();
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        let layout = compute_layout(&doc, &index, &resize_map);
+
+        assert!(layout.get(&c_id).is_none(), "No resize → no constraint layout");
+    }
+
+    #[test]
+    fn constraints_none_treated_as_start_start() {
+        let mut doc = Document::new("Test");
+
+        let mut parent = Node::new_frame("Parent", 200.0, 100.0);
+        let mut child = Node::new_frame("Child", 50.0, 40.0);
+        child.transform.tx = 20.0;
+        child.transform.ty = 10.0;
+        child.constraints = None;
+
+        let c_id = doc.nodes.insert(child);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c_id];
+        }
+        let p_id = doc.nodes.insert(parent);
+        doc.canvas.push(p_id);
+
+        let mut resize_map = ResizeMap::new();
+        resize_map.insert(p_id, (300.0, 150.0));
+
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        let layout = compute_layout(&doc, &index, &resize_map);
+
+        assert!(layout.get(&c_id).is_none(), "None constraints = no layout entry");
     }
 }

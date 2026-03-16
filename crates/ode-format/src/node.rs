@@ -115,10 +115,13 @@ impl Default for Transform {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ConstraintAxis {
-    Fixed,
-    Scale,
-    Stretch,
+    #[serde(alias = "fixed")]
+    Start,
+    End,
+    #[serde(alias = "stretch")]
+    StartEnd,
     Center,
+    Scale,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1137,5 +1140,33 @@ mod tests {
         } else {
             panic!("Expected Image node");
         }
+    }
+
+    // ─── Constraint Tests ───
+
+    #[test]
+    fn constraint_axis_serialization() {
+        assert_eq!(serde_json::to_string(&ConstraintAxis::Start).unwrap(), "\"start\"");
+        assert_eq!(serde_json::to_string(&ConstraintAxis::End).unwrap(), "\"end\"");
+        assert_eq!(serde_json::to_string(&ConstraintAxis::StartEnd).unwrap(), "\"start-end\"");
+        assert_eq!(serde_json::to_string(&ConstraintAxis::Center).unwrap(), "\"center\"");
+        assert_eq!(serde_json::to_string(&ConstraintAxis::Scale).unwrap(), "\"scale\"");
+    }
+
+    #[test]
+    fn constraint_axis_backward_compat() {
+        assert_eq!(serde_json::from_str::<ConstraintAxis>("\"fixed\"").unwrap(), ConstraintAxis::Start);
+        assert_eq!(serde_json::from_str::<ConstraintAxis>("\"stretch\"").unwrap(), ConstraintAxis::StartEnd);
+    }
+
+    #[test]
+    fn constraints_round_trip() {
+        let c = Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::StartEnd,
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        let parsed: Constraints = serde_json::from_str(&json).unwrap();
+        assert_eq!(c, parsed);
     }
 }

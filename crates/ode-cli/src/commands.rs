@@ -98,7 +98,7 @@ pub fn cmd_validate(file: &str) -> i32 {
 
 // ─── ode build ───
 
-pub fn cmd_build(file: &str, output: &str, format: Option<&str>) -> i32 {
+pub fn cmd_build(file: &str, output: &str, format: Option<&str>, resize: Option<&str>) -> i32 {
     let json = match load_input(file) {
         Ok(j) => j,
         Err((code, err)) => {
@@ -121,12 +121,12 @@ pub fn cmd_build(file: &str, output: &str, format: Option<&str>) -> i32 {
         }
     };
 
-    render_and_export(&doc, output, format, validation.warnings)
+    render_and_export(&doc, output, format, validation.warnings, resize)
 }
 
 // ─── ode render ───
 
-pub fn cmd_render(file: &str, output: &str, format: Option<&str>) -> i32 {
+pub fn cmd_render(file: &str, output: &str, format: Option<&str>, resize: Option<&str>) -> i32 {
     let json = match load_input(file) {
         Ok(j) => j,
         Err((code, err)) => {
@@ -143,7 +143,7 @@ pub fn cmd_render(file: &str, output: &str, format: Option<&str>) -> i32 {
         }
     };
 
-    render_and_export(&doc, output, format, vec![])
+    render_and_export(&doc, output, format, vec![], resize)
 }
 
 fn render_and_export(
@@ -151,17 +151,70 @@ fn render_and_export(
     output: &str,
     format: Option<&str>,
     warnings: Vec<Warning>,
+    resize: Option<&str>,
 ) -> i32 {
     let font_db = FontDatabase::new_system();
-    let scene = match Scene::from_document(doc, &font_db) {
-        Ok(s) => s,
-        Err(e) => {
+
+    let scene = if let Some(resize_str) = resize {
+        let parts: Vec<&str> = resize_str.split('x').collect();
+        if parts.len() != 2 {
             print_json(&ErrorResponse::new(
-                "RENDER_FAILED",
-                "render",
-                &e.to_string(),
+                "INVALID_RESIZE",
+                "parse",
+                "resize must be in WxH format (e.g., 1920x1080)",
             ));
-            return EXIT_PROCESS;
+            return EXIT_INPUT;
+        }
+        let w: f32 = match parts[0].parse() {
+            Ok(v) => v,
+            Err(_) => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_RESIZE",
+                    "parse",
+                    "invalid width in resize",
+                ));
+                return EXIT_INPUT;
+            }
+        };
+        let h: f32 = match parts[1].parse() {
+            Ok(v) => v,
+            Err(_) => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_RESIZE",
+                    "parse",
+                    "invalid height in resize",
+                ));
+                return EXIT_INPUT;
+            }
+        };
+
+        let mut resize_map = ode_core::ResizeMap::new();
+        if let Some(&root_id) = doc.canvas.first() {
+            resize_map.insert(root_id, (w, h));
+        }
+
+        match Scene::from_document_with_resize(doc, &font_db, &resize_map) {
+            Ok(s) => s,
+            Err(e) => {
+                print_json(&ErrorResponse::new(
+                    "RENDER_FAILED",
+                    "render",
+                    &e.to_string(),
+                ));
+                return EXIT_PROCESS;
+            }
+        }
+    } else {
+        match Scene::from_document(doc, &font_db) {
+            Ok(s) => s,
+            Err(e) => {
+                print_json(&ErrorResponse::new(
+                    "RENDER_FAILED",
+                    "render",
+                    &e.to_string(),
+                ));
+                return EXIT_PROCESS;
+            }
         }
     };
 

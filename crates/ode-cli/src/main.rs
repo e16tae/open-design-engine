@@ -45,6 +45,9 @@ enum Command {
         /// Output format: png, svg, pdf (auto-detected from extension if omitted)
         #[arg(long)]
         format: Option<String>,
+        /// Resize the root frame (e.g., 1920x1080)
+        #[arg(long, value_name = "WxH")]
+        resize: Option<String>,
     },
     /// Render without validation (fast path)
     Render {
@@ -56,6 +59,9 @@ enum Command {
         /// Output format: png, svg, pdf (auto-detected from extension if omitted)
         #[arg(long)]
         format: Option<String>,
+        /// Resize the root frame (e.g., 1920x1080)
+        #[arg(long, value_name = "WxH")]
+        resize: Option<String>,
     },
     /// Inspect document structure
     Inspect {
@@ -156,12 +162,14 @@ fn main() {
             file,
             output,
             format,
-        } => commands::cmd_build(&file, &output, format.as_deref()),
+            resize,
+        } => commands::cmd_build(&file, &output, format.as_deref(), resize.as_deref()),
         Command::Render {
             file,
             output,
             format,
-        } => commands::cmd_render(&file, &output, format.as_deref()),
+            resize,
+        } => commands::cmd_render(&file, &output, format.as_deref(), resize.as_deref()),
         Command::Inspect { file, full } => commands::cmd_inspect(&file, full),
         Command::Schema { topic } => commands::cmd_schema(topic.as_deref()),
         Command::Import { source } => match source {
