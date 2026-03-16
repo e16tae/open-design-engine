@@ -135,19 +135,14 @@ pub fn convert_constraints(c: &FigmaLayoutConstraint) -> Constraints {
 }
 
 /// Map a single Figma constraint string to an ODE `ConstraintAxis`.
-fn convert_constraint_axis(s: &str, is_horizontal: bool) -> ConstraintAxis {
+fn convert_constraint_axis(s: &str, _is_horizontal: bool) -> ConstraintAxis {
     match s {
-        // Fixed anchoring (left/right or top/bottom)
-        "LEFT" | "TOP" => ConstraintAxis::Fixed,
-        "RIGHT" | "BOTTOM" => ConstraintAxis::Fixed,
+        "LEFT" | "TOP" => ConstraintAxis::Start,
+        "RIGHT" | "BOTTOM" => ConstraintAxis::End,
         "CENTER" => ConstraintAxis::Center,
-        "LEFT_RIGHT" | "TOP_BOTTOM" => ConstraintAxis::Stretch,
+        "LEFT_RIGHT" | "TOP_BOTTOM" => ConstraintAxis::StartEnd,
         "SCALE" => ConstraintAxis::Scale,
-        _ => {
-            // For unknown values, treat as fixed on the start edge.
-            let _ = is_horizontal;
-            ConstraintAxis::Fixed
-        }
+        _ => ConstraintAxis::Start,
     }
 }
 
@@ -313,7 +308,7 @@ mod tests {
         };
         let constraints = convert_constraints(&c);
         assert_eq!(constraints.horizontal, ConstraintAxis::Center);
-        assert_eq!(constraints.vertical, ConstraintAxis::Stretch);
+        assert_eq!(constraints.vertical, ConstraintAxis::StartEnd);
     }
 
     #[test]
@@ -334,16 +329,16 @@ mod tests {
             horizontal: "LEFT".to_string(),
         };
         let constraints = convert_constraints(&c);
-        assert_eq!(constraints.horizontal, ConstraintAxis::Fixed);
-        assert_eq!(constraints.vertical, ConstraintAxis::Fixed);
+        assert_eq!(constraints.horizontal, ConstraintAxis::Start);
+        assert_eq!(constraints.vertical, ConstraintAxis::Start);
 
         let c2 = FigmaLayoutConstraint {
             vertical: "BOTTOM".to_string(),
             horizontal: "RIGHT".to_string(),
         };
         let constraints2 = convert_constraints(&c2);
-        assert_eq!(constraints2.horizontal, ConstraintAxis::Fixed);
-        assert_eq!(constraints2.vertical, ConstraintAxis::Fixed);
+        assert_eq!(constraints2.horizontal, ConstraintAxis::End);
+        assert_eq!(constraints2.vertical, ConstraintAxis::End);
     }
 
     #[test]
