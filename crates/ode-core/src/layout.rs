@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use ode_format::document::Document;
 use ode_format::node::{
-    CounterAxisAlign, FrameData, LayoutConfig, LayoutDirection, LayoutWrap, Node, NodeId, NodeKind,
-    PrimaryAxisAlign, SizingMode,
+    ConstraintAxis, Constraints, CounterAxisAlign, FrameData, LayoutConfig, LayoutDirection,
+    LayoutWrap, Node, NodeId, NodeKind, PrimaryAxisAlign, SizingMode,
 };
 use taffy::prelude::*;
 
@@ -18,6 +18,59 @@ pub struct LayoutRect {
 
 /// Maps NodeIds to their computed layout rectangles.
 pub type LayoutMap = HashMap<NodeId, LayoutRect>;
+
+/// Maps NodeIds to override sizes for constraint-based resize simulation.
+pub type ResizeMap = HashMap<NodeId, (f32, f32)>;
+
+// ─── Constraints Engine ───
+
+/// Apply a single axis constraint.
+fn apply_axis(axis: ConstraintAxis, pos: f32, size: f32, original: f32, current: f32) -> (f32, f32) {
+    let delta = current - original;
+    match axis {
+        ConstraintAxis::Start => (pos, size),
+        ConstraintAxis::End => (pos + delta, size),
+        ConstraintAxis::StartEnd => (pos, (size + delta).max(0.0)),
+        ConstraintAxis::Center => (pos + delta * 0.5, size),
+        ConstraintAxis::Scale => {
+            if original.abs() < f32::EPSILON {
+                (pos, size)
+            } else {
+                let ratio = current / original;
+                (pos * ratio, size * ratio)
+            }
+        }
+    }
+}
+
+/// Apply constraints to reposition/resize a child rect when its parent is resized.
+pub fn apply_constraints(
+    child: LayoutRect,
+    constraints: &Constraints,
+    original_parent: (f32, f32),
+    current_parent: (f32, f32),
+) -> LayoutRect {
+    let (new_x, new_w) = apply_axis(
+        constraints.horizontal,
+        child.x,
+        child.width,
+        original_parent.0,
+        current_parent.0,
+    );
+    let (new_y, new_h) = apply_axis(
+        constraints.vertical,
+        child.y,
+        child.height,
+        original_parent.1,
+        current_parent.1,
+    );
+    LayoutRect {
+        x: new_x,
+        y: new_y,
+        width: new_w,
+        height: new_h,
+    }
+}
 
 /// Compute auto layout for the entire document.
 ///
@@ -452,8 +505,8 @@ mod tests {
     use super::*;
     use ode_format::document::Document;
     use ode_format::node::{
-        CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding, LayoutSizing, LayoutWrap,
-        Node, NodeKind, PrimaryAxisAlign, SizingMode,
+        ConstraintAxis, Constraints, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding,
+        LayoutSizing, LayoutWrap, Node, NodeKind, PrimaryAxisAlign, SizingMode,
     };
 
     /// Helper: create a frame with auto layout enabled.
@@ -969,5 +1022,117 @@ mod tests {
             "inst.h = {}",
             inst_rect.height
         );
+    }
+
+    // ─── Constraints unit tests ───
+
+    #[test]
+    fn constraint_start_no_change() {
+        let child = LayoutRect { x: 20.0, y: 30.0, width: 50.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::Start,
+            vertical: ConstraintAxis::Start,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (300.0, 150.0));
+        assert!((result.x - 20.0).abs() < 0.01);
+        assert!((result.y - 30.0).abs() < 0.01);
+        assert!((result.width - 50.0).abs() < 0.01);
+        assert!((result.height - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn constraint_end_shifts_position() {
+        let child = LayoutRect { x: 130.0, y: 50.0, width: 50.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::End,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (300.0, 150.0));
+        assert!((result.x - 230.0).abs() < 0.01, "x = {}", result.x);
+        assert!((result.y - 100.0).abs() < 0.01, "y = {}", result.y);
+        assert!((result.width - 50.0).abs() < 0.01);
+        assert!((result.height - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn constraint_start_end_stretches() {
+        let child = LayoutRect { x: 20.0, y: 10.0, width: 160.0, height: 80.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::StartEnd,
+            vertical: ConstraintAxis::StartEnd,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (300.0, 150.0));
+        assert!((result.x - 20.0).abs() < 0.01);
+        assert!((result.y - 10.0).abs() < 0.01);
+        assert!((result.width - 260.0).abs() < 0.01, "w = {}", result.width);
+        assert!((result.height - 130.0).abs() < 0.01, "h = {}", result.height);
+    }
+
+    #[test]
+    fn constraint_start_end_clamps_to_zero() {
+        let child = LayoutRect { x: 20.0, y: 10.0, width: 50.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::StartEnd,
+            vertical: ConstraintAxis::StartEnd,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (10.0, 5.0));
+        assert!(result.width.abs() < 0.01, "w clamped to 0, got {}", result.width);
+        assert!(result.height.abs() < 0.01, "h clamped to 0, got {}", result.height);
+    }
+
+    #[test]
+    fn constraint_center_shifts_half_delta() {
+        let child = LayoutRect { x: 75.0, y: 30.0, width: 50.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::Center,
+            vertical: ConstraintAxis::Center,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (300.0, 150.0));
+        assert!((result.x - 125.0).abs() < 0.01, "x = {}", result.x);
+        assert!((result.y - 55.0).abs() < 0.01, "y = {}", result.y);
+        assert!((result.width - 50.0).abs() < 0.01);
+        assert!((result.height - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn constraint_scale_proportional() {
+        let child = LayoutRect { x: 40.0, y: 20.0, width: 80.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::Scale,
+            vertical: ConstraintAxis::Scale,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (400.0, 200.0));
+        assert!((result.x - 80.0).abs() < 0.01, "x = {}", result.x);
+        assert!((result.y - 40.0).abs() < 0.01, "y = {}", result.y);
+        assert!((result.width - 160.0).abs() < 0.01, "w = {}", result.width);
+        assert!((result.height - 80.0).abs() < 0.01, "h = {}", result.height);
+    }
+
+    #[test]
+    fn constraint_scale_zero_parent_degrades_to_start() {
+        let child = LayoutRect { x: 40.0, y: 20.0, width: 80.0, height: 40.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::Scale,
+            vertical: ConstraintAxis::Scale,
+        };
+        let result = apply_constraints(child, &constraints, (0.0, 0.0), (300.0, 150.0));
+        assert!((result.x - 40.0).abs() < 0.01);
+        assert!((result.y - 20.0).abs() < 0.01);
+        assert!((result.width - 80.0).abs() < 0.01);
+        assert!((result.height - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn constraint_mixed_axes() {
+        let child = LayoutRect { x: 20.0, y: 50.0, width: 60.0, height: 30.0 };
+        let constraints = Constraints {
+            horizontal: ConstraintAxis::StartEnd,
+            vertical: ConstraintAxis::End,
+        };
+        let result = apply_constraints(child, &constraints, (200.0, 100.0), (300.0, 150.0));
+        assert!((result.x - 20.0).abs() < 0.01);
+        assert!((result.width - 160.0).abs() < 0.01, "w = {}", result.width);
+        assert!((result.y - 100.0).abs() < 0.01, "y = {}", result.y);
+        assert!((result.height - 30.0).abs() < 0.01);
     }
 }
