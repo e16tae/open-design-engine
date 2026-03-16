@@ -34,7 +34,7 @@ impl Scene {
             .collect();
 
         // Compute auto layout positions (reuse stable_id_index)
-        let layout_map = crate::layout::compute_layout(doc, &stable_id_index);
+        let layout_map = crate::layout::compute_layout(doc, &stable_id_index, &Default::default());
 
         // Determine scene size from first canvas root
         let first_root = doc.canvas[0];

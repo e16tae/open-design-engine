@@ -72,19 +72,29 @@ pub fn apply_constraints(
     }
 }
 
-/// Compute auto layout for the entire document.
+/// Compute layout for the entire document (auto layout + constraints).
 ///
-/// Walks the node tree depth-first, computing layout for each auto-layout
-/// container subtree using taffy. Returns a map of NodeId → LayoutRect
-/// for all nodes that participate in auto layout.
+/// Phase 1: Walks the node tree depth-first (bottom-up), computing layout for
+/// each auto-layout container subtree using taffy.
+/// Phase 2: Walks the node tree top-down, applying constraints to children of
+/// non-auto-layout containers that have been resized.
 pub fn compute_layout<'a>(
     doc: &'a Document,
     stable_id_index: &HashMap<&'a str, NodeId>,
+    resize_map: &ResizeMap,
 ) -> LayoutMap {
     let mut result = LayoutMap::new();
+
+    // Phase 1: Auto Layout (Taffy) — bottom-up
     for &root_id in &doc.canvas {
         walk_for_layout(doc, root_id, &mut result, stable_id_index);
     }
+
+    // Phase 2: Constraints — top-down
+    for &root_id in &doc.canvas {
+        walk_for_constraints(doc, root_id, resize_map, &mut result, stable_id_index);
+    }
+
     result
 }
 
@@ -500,6 +510,115 @@ fn get_container_available_size(
     }
 }
 
+// ─── Constraints Walk ───
+
+/// Get the design-time size of a container node (Frame or Instance).
+fn get_container_design_size(
+    node: &Node,
+    doc: &Document,
+    stable_id_index: &HashMap<&str, NodeId>,
+) -> Option<(f32, f32)> {
+    match &node.kind {
+        NodeKind::Frame(data) => Some((data.width, data.height)),
+        NodeKind::Instance(data) => {
+            let comp_size = stable_id_index
+                .get(data.source_component.as_str())
+                .and_then(|&comp_id| {
+                    if let NodeKind::Frame(ref fd) = doc.nodes[comp_id].kind {
+                        Some((fd.width, fd.height))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((0.0, 0.0));
+            Some((
+                data.width.unwrap_or(comp_size.0),
+                data.height.unwrap_or(comp_size.1),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Get the intrinsic size of any node (for building child_rect in constraints).
+fn get_node_intrinsic_size(node: &Node) -> (f32, f32) {
+    match &node.kind {
+        NodeKind::Frame(data) => (data.width, data.height),
+        NodeKind::Text(data) => (data.width, data.height),
+        NodeKind::Image(data) => (data.width, data.height),
+        NodeKind::Instance(data) => (data.width.unwrap_or(0.0), data.height.unwrap_or(0.0)),
+        _ => (0.0, 0.0),
+    }
+}
+
+/// Top-down depth-first walk: apply constraints to children of non-auto-layout containers.
+fn walk_for_constraints(
+    doc: &Document,
+    node_id: NodeId,
+    resize_map: &ResizeMap,
+    result: &mut LayoutMap,
+    stable_id_index: &HashMap<&str, NodeId>,
+) {
+    let node = &doc.nodes[node_id];
+
+    // Only Frame and Instance without auto-layout are constraint containers
+    let is_constraint_container = match &node.kind {
+        NodeKind::Frame(data) => data.container.layout.is_none(),
+        NodeKind::Instance(data) => data.container.layout.is_none(),
+        _ => false,
+    };
+
+    if is_constraint_container {
+        if let Some(design_size) = get_container_design_size(node, doc, stable_id_index) {
+            // Current size priority: resize_map > constraint result from parent > design size
+            let current_size = resize_map
+                .get(&node_id)
+                .copied()
+                .or_else(|| result.get(&node_id).map(|r| (r.width, r.height)))
+                .unwrap_or(design_size);
+
+            // Only apply if size actually changed
+            if (current_size.0 - design_size.0).abs() > f32::EPSILON
+                || (current_size.1 - design_size.1).abs() > f32::EPSILON
+            {
+                if let Some(children) = node.kind.children() {
+                    for &child_id in children {
+                        let child_node = &doc.nodes[child_id];
+                        let constraints = match child_node.constraints {
+                            Some(c) => c,
+                            None => continue,
+                        };
+                        if constraints.horizontal == ConstraintAxis::Start
+                            && constraints.vertical == ConstraintAxis::Start
+                        {
+                            continue;
+                        }
+
+                        let (iw, ih) = get_node_intrinsic_size(child_node);
+                        let child_rect = LayoutRect {
+                            x: child_node.transform.tx,
+                            y: child_node.transform.ty,
+                            width: iw,
+                            height: ih,
+                        };
+
+                        let new_rect =
+                            apply_constraints(child_rect, &constraints, design_size, current_size);
+                        result.insert(child_id, new_rect);
+                    }
+                }
+            }
+        }
+    }
+
+    // Recurse top-down: parent resolved before children
+    if let Some(children) = node.kind.children() {
+        for &child_id in children {
+            walk_for_constraints(doc, child_id, resize_map, result, stable_id_index);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,7 +644,7 @@ mod tests {
             .iter()
             .map(|(nid, node)| (node.stable_id.as_str(), nid))
             .collect();
-        compute_layout(doc, &index)
+        compute_layout(doc, &index, &ResizeMap::new())
     }
 
     fn default_config() -> LayoutConfig {
@@ -1134,5 +1253,192 @@ mod tests {
         assert!((result.width - 160.0).abs() < 0.01, "w = {}", result.width);
         assert!((result.y - 100.0).abs() < 0.01, "y = {}", result.y);
         assert!((result.height - 30.0).abs() < 0.01);
+    }
+
+    // ─── Constraints integration tests ───
+
+    #[test]
+    fn constraints_reposition_on_resize() {
+        let mut doc = Document::new("Test");
+
+        let mut parent = Node::new_frame("Parent", 200.0, 100.0);
+        let mut child = Node::new_frame("Child", 30.0, 20.0);
+        child.transform.tx = 150.0;
+        child.transform.ty = 60.0;
+        child.constraints = Some(Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::End,
+        });
+
+        let c_id = doc.nodes.insert(child);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c_id];
+        }
+        let p_id = doc.nodes.insert(parent);
+        doc.canvas.push(p_id);
+
+        let mut resize_map = ResizeMap::new();
+        resize_map.insert(p_id, (300.0, 150.0));
+
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        let layout = compute_layout(&doc, &index, &resize_map);
+
+        let r = layout.get(&c_id).expect("Child should have layout rect");
+        assert!((r.x - 250.0).abs() < 0.1, "x = {}", r.x);
+        assert!((r.y - 110.0).abs() < 0.1, "y = {}", r.y);
+        assert!((r.width - 30.0).abs() < 0.1);
+        assert!((r.height - 20.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn constraints_ignored_for_auto_layout_frames() {
+        let mut doc = Document::new("Test");
+
+        let config = default_config();
+        let mut parent = make_auto_layout_frame("Parent", 200.0, 100.0, config);
+
+        let mut child = Node::new_frame("Child", 50.0, 40.0);
+        child.transform.tx = 10.0;
+        child.transform.ty = 10.0;
+        child.constraints = Some(Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::End,
+        });
+
+        let c_id = doc.nodes.insert(child);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c_id];
+        }
+        let p_id = doc.nodes.insert(parent);
+        doc.canvas.push(p_id);
+
+        let mut resize_map = ResizeMap::new();
+        resize_map.insert(p_id, (300.0, 150.0));
+
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        let layout = compute_layout(&doc, &index, &resize_map);
+
+        let r = layout.get(&c_id).expect("Child should have auto-layout rect");
+        assert!((r.x - 0.0).abs() < 0.1, "x = {} (auto layout, not constraint)", r.x);
+    }
+
+    #[test]
+    fn nested_constraints_top_down() {
+        let mut doc = Document::new("Test");
+
+        let mut grandparent = Node::new_frame("GP", 400.0, 200.0);
+
+        let mut parent = Node::new_frame("Parent", 200.0, 100.0);
+        parent.transform.tx = 100.0;
+        parent.transform.ty = 50.0;
+        parent.constraints = Some(Constraints {
+            horizontal: ConstraintAxis::StartEnd,
+            vertical: ConstraintAxis::Start,
+        });
+
+        let mut child = Node::new_frame("Child", 30.0, 20.0);
+        child.transform.tx = 150.0;
+        child.transform.ty = 60.0;
+        child.constraints = Some(Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::Start,
+        });
+
+        let c_id = doc.nodes.insert(child);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c_id];
+        }
+        let parent_id = doc.nodes.insert(parent);
+        if let NodeKind::Frame(ref mut data) = grandparent.kind {
+            data.container.children = vec![parent_id];
+        }
+        let gp_id = doc.nodes.insert(grandparent);
+        doc.canvas.push(gp_id);
+
+        let mut resize_map = ResizeMap::new();
+        resize_map.insert(gp_id, (600.0, 200.0));
+
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        let layout = compute_layout(&doc, &index, &resize_map);
+
+        let pr = layout.get(&parent_id).expect("Parent should have layout rect");
+        assert!((pr.x - 100.0).abs() < 0.1, "parent.x = {}", pr.x);
+        assert!((pr.width - 400.0).abs() < 0.1, "parent.w = {}", pr.width);
+
+        let cr = layout.get(&c_id).expect("Child should have layout rect");
+        assert!((cr.x - 350.0).abs() < 0.1, "child.x = {}", cr.x);
+    }
+
+    #[test]
+    fn no_resize_no_constraints_applied() {
+        let mut doc = Document::new("Test");
+
+        let mut parent = Node::new_frame("Parent", 200.0, 100.0);
+        let mut child = Node::new_frame("Child", 50.0, 40.0);
+        child.transform.tx = 20.0;
+        child.transform.ty = 10.0;
+        child.constraints = Some(Constraints {
+            horizontal: ConstraintAxis::End,
+            vertical: ConstraintAxis::End,
+        });
+
+        let c_id = doc.nodes.insert(child);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c_id];
+        }
+        let p_id = doc.nodes.insert(parent);
+        doc.canvas.push(p_id);
+
+        let resize_map = ResizeMap::new();
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        let layout = compute_layout(&doc, &index, &resize_map);
+
+        assert!(layout.get(&c_id).is_none(), "No resize → no constraint layout");
+    }
+
+    #[test]
+    fn constraints_none_treated_as_start_start() {
+        let mut doc = Document::new("Test");
+
+        let mut parent = Node::new_frame("Parent", 200.0, 100.0);
+        let mut child = Node::new_frame("Child", 50.0, 40.0);
+        child.transform.tx = 20.0;
+        child.transform.ty = 10.0;
+        child.constraints = None;
+
+        let c_id = doc.nodes.insert(child);
+        if let NodeKind::Frame(ref mut data) = parent.kind {
+            data.container.children = vec![c_id];
+        }
+        let p_id = doc.nodes.insert(parent);
+        doc.canvas.push(p_id);
+
+        let mut resize_map = ResizeMap::new();
+        resize_map.insert(p_id, (300.0, 150.0));
+
+        let index: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(nid, node)| (node.stable_id.as_str(), nid))
+            .collect();
+        let layout = compute_layout(&doc, &index, &resize_map);
+
+        assert!(layout.get(&c_id).is_none(), "None constraints = no layout entry");
     }
 }
