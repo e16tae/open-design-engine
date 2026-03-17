@@ -1,0 +1,14 @@
+[package]
+name = "ode-review"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ODE design rules engine — validate designs against knowledge-based rules"
+
+[dependencies]
+ode-format = { path = "../ode-format" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
