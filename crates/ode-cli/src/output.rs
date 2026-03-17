@@ -111,6 +111,42 @@ impl ErrorResponse {
     }
 }
 
+// ─── Review responses ───
+
+#[derive(Serialize)]
+pub struct ReviewResponse {
+    pub status: &'static str,
+    pub context: serde_json::Value,
+    pub summary: ode_review::result::ReviewSummary,
+    pub issues: Vec<ode_review::result::ReviewIssue>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub skipped_rules: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<Warning>,
+}
+
+// ─── Guide responses ───
+
+#[derive(Serialize)]
+pub struct GuideContentResponse {
+    pub status: &'static str,
+    pub format: &'static str,
+    pub content: String,
+}
+
+#[derive(Serialize)]
+pub struct GuideListResponse {
+    pub status: &'static str,
+    pub layers: Vec<GuideLayerInfo>,
+}
+
+#[derive(Serialize)]
+pub struct GuideLayerInfo {
+    pub id: String,
+    pub name: String,
+    pub contexts: Vec<String>,
+}
+
 // ─── Print helpers ───
 
 pub fn print_json<T: Serialize>(value: &T) {
