@@ -1,0 +1,21 @@
+[
+  {
+    "id": "minimum-spacing",
+    "layer": "spatial-composition",
+    "severity": "warning",
+    "checker": "spacing_scale",
+    "params": {
+      "base": 4.0,
+      "tolerance": 0.5
+    },
+    "applies_to": {
+      "node_kinds": ["frame"],
+      "contexts": []
+    },
+    "message": "Spacing {actual}px does not align to the 4px base grid (base: {base}px)",
+    "suggestion": "Adjust spacing to the nearest multiple of {base}px. Common values: 4, 8, 12, 16, 20, 24, 32, 40, 48.",
+    "references": [
+      "https://m3.material.io/foundations/layout/understanding-layout/spacing"
+    ]
+  }
+]

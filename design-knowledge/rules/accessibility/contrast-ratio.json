@@ -1,0 +1,20 @@
+[
+  {
+    "id": "contrast-ratio",
+    "layer": "accessibility",
+    "severity": "error",
+    "checker": "contrast_ratio",
+    "params": {
+      "min_ratio": 4.5
+    },
+    "applies_to": {
+      "node_kinds": ["text"],
+      "contexts": ["web", "mobile-app"]
+    },
+    "message": "Contrast ratio {actual}:1 is below the WCAG AA minimum of {min_ratio}:1",
+    "suggestion": "Increase the contrast between foreground and background colors to at least {min_ratio}:1. Use darker text on light backgrounds or lighter text on dark backgrounds.",
+    "references": [
+      "https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html"
+    ]
+  }
+]

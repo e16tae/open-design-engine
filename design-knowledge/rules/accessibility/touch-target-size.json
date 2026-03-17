@@ -1,0 +1,22 @@
+[
+  {
+    "id": "touch-target-size",
+    "layer": "accessibility",
+    "severity": "warning",
+    "checker": "min_value",
+    "params": {
+      "property": "width",
+      "min": 44.0
+    },
+    "applies_to": {
+      "node_kinds": ["frame"],
+      "contexts": ["mobile-app"]
+    },
+    "message": "Interactive element width {actual}pt is below the recommended 44pt minimum touch target size (actual: {actual}, minimum: {min})",
+    "suggestion": "Increase the element size to at least {min}pt x {min}pt to ensure reliable touch interaction. Apple HIG recommends 44pt and Material Design recommends 48dp.",
+    "references": [
+      "https://developer.apple.com/design/human-interface-guidelines/accessibility#Controls",
+      "https://m3.material.io/foundations/accessible-design/accessibility-basics#a0f87828-131b-47e0-bba4-cfb4aaae1f9a"
+    ]
+  }
+]

@@ -1,0 +1,21 @@
+[
+  {
+    "id": "alignment-consistency",
+    "layer": "spatial-composition",
+    "severity": "info",
+    "checker": "spacing_scale",
+    "params": {
+      "base": 8.0,
+      "tolerance": 1.0
+    },
+    "applies_to": {
+      "node_kinds": ["frame"],
+      "contexts": ["web", "mobile-app"]
+    },
+    "message": "Spacing {actual}px does not align to the 8px layout grid (base: {base}px)",
+    "suggestion": "Adjust spacing to the nearest multiple of {base}px for visual consistency. Standard layout values: 8, 16, 24, 32, 48, 64.",
+    "references": [
+      "https://m3.material.io/foundations/layout/understanding-layout/spacing"
+    ]
+  }
+]
