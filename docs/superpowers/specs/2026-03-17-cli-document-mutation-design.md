@@ -42,10 +42,15 @@ Creates a node and inserts it into the document tree.
 
 | Kind | Required | Optional |
 |------|----------|----------|
-| `frame` | `--name`, `--width`, `--height` | `--parent`, `--fill`, `--corner-radius`, `--clips-content` |
-| `text` | `--content` | `--parent`, `--name`, `--font-size`, `--font-family`, `--fill`, `--width`, `--height` |
-| `vector` | `--shape` | `--parent`, `--name`, `--width`, `--height`, `--fill`, `--corner-radius` (rect only) |
-| `image` | `--width`, `--height` | `--parent`, `--name`, `--src` |
+| `frame` | `--name`, `--width`, `--height` | `--parent`, `--index`, `--fill`, `--corner-radius`, `--clips-content` |
+| `group` | (none) | `--parent`, `--index`, `--name` |
+| `text` | `--content` | `--parent`, `--index`, `--name`, `--font-size`, `--font-family`, `--fill`, `--width`, `--height` |
+| `vector` | `--shape` | `--parent`, `--index`, `--name`, `--width`, `--height`, `--fill` |
+| `image` | `--width`, `--height` | `--parent`, `--index`, `--name`, `--src` |
+
+Default names when `--name` is omitted: text → "Text", vector → shape name ("Rectangle", "Ellipse", "Line", "Star", "Polygon"), image → "Image", group → "Group".
+
+`--index N` inserts at position N in parent's children (0-based). Omitted → append at end.
 
 #### Shape Presets (`--shape`)
 
@@ -61,11 +66,12 @@ Shape generators are pure functions in `ode-format/src/shapes.rs` that produce `
 
 | `--parent` value | Behavior |
 |------------------|----------|
-| omitted | Append to `doc.canvas[0]`'s children |
+| omitted + canvas non-empty | Append to `doc.canvas[0]`'s children |
+| omitted + canvas empty | Append to `doc.canvas` as top-level node (same as `root`) |
 | `root` | Append to `doc.canvas` (top-level node) |
 | `<stable_id>` | Append to that node's children |
 
-Error if the target parent is not a container (vector, text, image cannot have children).
+Containers that accept children: Frame, Group, BooleanOp, Instance. Error if target parent is a non-container (Vector, Text, Image).
 
 #### Response
 
@@ -95,14 +101,16 @@ Modifies properties of an existing node.
 | `--blend-mode` | enum | normal, multiply, screen, overlay, ... |
 | `--x`, `--y` | f32 | Position (transform.tx, transform.ty) |
 
-**Size (frame, image):**
+**Size (frame, text, image):**
 
 | Flag | Type | Description |
 |------|------|-------------|
 | `--width` | f32 | Node width |
 | `--height` | f32 | Node height |
 
-**Visual (frame, vector, text — nodes with VisualProps):**
+Note: Vector size is defined by its path geometry, not by explicit width/height fields.
+
+**Visual (frame, vector, text, image, boolean-op — nodes with VisualProps):**
 
 | Flag | Type | Description |
 |------|------|-------------|
@@ -131,14 +139,14 @@ Modifies properties of an existing node.
 | `--font-family` | string | Font family |
 | `--font-weight` | u16 | Font weight |
 | `--text-align` | enum | left, center, right |
-| `--line-height` | f32 | Line height multiplier |
+| `--line-height` | f32 or "auto" | Line height: bare number → Percent variant, "auto" → Auto variant |
 
 #### Color Parsing
 
 Supported formats:
-- `#RGB` — e.g., `#F00`
 - `#RRGGBB` — e.g., `#FF0000`
 - `#RRGGBBAA` — e.g., `#FF000080`
+- `#RGB` — e.g., `#F00` (expanded to `#RRGGBB`; requires extending `Color::from_hex`)
 
 #### Type Safety
 
@@ -165,6 +173,7 @@ Removes a node and all its descendants.
 - Removes the node's stable_id from its parent's children array
 - If the node is a canvas root, removes from `doc.canvas`
 - If a remaining Instance references a deleted component, emit a warning (do not block)
+- If a View references the deleted node (e.g., as a page or root), remove the reference from the view and emit a warning
 
 #### Response
 
@@ -182,7 +191,8 @@ Moves a node to a different parent.
 
 - Remove from old parent's children
 - Insert into new parent's children at `--index` (or append if omitted)
-- `--parent root` moves to canvas root level
+- `--parent root` moves to canvas root level (`doc.canvas` array; `--index` controls position within it)
+- If the node is already at canvas root and `--parent root` is given, it reorders within `doc.canvas`
 - Cycle detection: if target is a descendant of the moved node → `CYCLE_DETECTED` error
 - Non-container target → `NOT_CONTAINER` error
 
@@ -230,6 +240,14 @@ impl DocumentWire {
     fn children_mut(kind: &mut NodeKindWire) -> Option<&mut Vec<String>>;
 }
 ```
+
+### Implementation Notes
+
+- Setting `--x`/`--y` modifies only `transform.tx`/`transform.ty`, preserving rotation and scale components (`a`, `b`, `c`, `d`).
+- New stable_ids are generated using `nanoid` (matching existing `Node` constructors).
+- `--corner-radius` on `ode add vector --shape rect` affects path generation (rounded rect path), not a stored property. `ode set --corner-radius` only applies to Frame nodes.
+- `is_container()` returns true for Frame, Group, BooleanOp, Instance — matching runtime `NodeKind::children()`.
+- `--layout horizontal|vertical` enables auto-layout with defaults: align-primary=Start, align-counter=Start, wrap=NoWrap. Alignment and wrap flags are deferred to a later iteration.
 
 ### Shared Load/Save Pattern
 
