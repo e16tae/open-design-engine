@@ -71,6 +71,8 @@ open-design-engine/
 
 ### index.json 구조
 
+규칙/가이드 파일 경로는 명시적 목록 (glob 패턴 미사용 — 의존성 최소화).
+
 ```json
 {
   "layers": [
@@ -78,13 +80,22 @@ open-design-engine/
       "id": "spatial-composition",
       "name": "공간 구성",
       "guides": ["guides/spatial-composition.md"],
-      "rules": ["rules/spatial-composition/*.json"]
+      "rules": [
+        "rules/spatial-composition/minimum-spacing.json",
+        "rules/spatial-composition/alignment-consistency.json",
+        "rules/spatial-composition/density-range.json"
+      ]
     },
     {
       "id": "accessibility",
       "name": "접근성",
       "guides": ["guides/accessibility.md"],
-      "rules": ["rules/accessibility/*.json"]
+      "rules": [
+        "rules/accessibility/contrast-ratio.json",
+        "rules/accessibility/touch-target-size.json",
+        "rules/accessibility/focus-indicator.json",
+        "rules/accessibility/cognitive-load.json"
+      ]
     }
   ]
 }
@@ -94,8 +105,15 @@ open-design-engine/
 
 `ode-cli`가 `design-knowledge/` 경로를 찾는 방식:
 1. 환경변수 `ODE_KNOWLEDGE_PATH` (우선)
-2. 실행 바이너리 기준 상대경로 `../design-knowledge/`
-3. 현재 작업 디렉토리의 `design-knowledge/`
+2. 빌드 시 내장 경로 (`env!("CARGO_MANIFEST_DIR")` 기반 — `cargo install` 시에도 동작)
+3. 실행 바이너리 기준 상대경로 `../design-knowledge/`
+4. 현재 작업 디렉토리의 `design-knowledge/`
+5. `~/.ode/design-knowledge/` (사용자 홈 디렉토리)
+
+어느 경로에서도 찾지 못하면 `ode guide`/`ode review` 실행 시 명확한 에러 메시지 출력:
+```json
+{"status": "error", "code": "KNOWLEDGE_NOT_FOUND", "message": "design-knowledge directory not found", "suggestion": "set ODE_KNOWLEDGE_PATH or place design-knowledge/ in the working directory"}
+```
 
 ---
 
@@ -148,6 +166,7 @@ design-knowledge/rules/
     "node_kinds": ["text"],
     "contexts": ["web", "mobile-app"]
   },
+  "_note_node_kinds": "유효한 값: frame, group, vector, boolean-op, text, image, instance (wire format tag와 동일)",
   "message": "텍스트 대비 비율 {actual}:1 — WCAG AA 기준 {min_ratio}:1 이상 필요",
   "suggestion": "텍스트 색상을 더 어둡게 하거나 배경을 더 밝게 변경",
   "references": [
@@ -163,7 +182,7 @@ design-knowledge/rules/
 | `severity` | `error` (반드시 수정), `warning` (권장), `info` (참고) |
 | `checker` | Rust에 등록된 체커 함수 이름 |
 | `params` | 체커 함수에 넘기는 파라미터 |
-| `applies_to.node_kinds` | 이 규칙이 적용되는 노드 타입 필터 |
+| `applies_to.node_kinds` | 노드 타입 필터. 유효값: `frame`, `group`, `vector`, `boolean-op`, `text`, `image`, `instance` (wire format tag와 동일) |
 | `applies_to.contexts` | 출력 맥락 필터 — 웹 규칙이 인쇄에 적용되면 안 됨 |
 | `message` | 에이전트용 에러 메시지 (템플릿 변수 `{actual}`, `{min_ratio}` 등 지원) |
 | `suggestion` | 자동 수정 힌트 |
@@ -173,24 +192,51 @@ design-knowledge/rules/
 
 JSON은 설정, Rust는 로직 — 역할 분리.
 
-| checker | 검사 내용 | params 예시 |
-|---------|----------|-------------|
-| `contrast_ratio` | 전경/배경 색상 대비 비율 | `min_ratio`, `target` |
-| `min_value` | 속성의 최소값 | `property`, `min`, `unit` |
-| `max_value` | 속성의 최대값 | `property`, `max`, `unit` |
-| `range` | 속성이 범위 안에 있는지 | `property`, `min`, `max` |
-| `ratio` | 두 값의 비율 | `numerator`, `denominator`, `min`, `max` |
-| `match` | 속성이 허용 값 중 하나인지 | `property`, `allowed` |
-| `spacing_scale` | 간격이 정해진 스케일을 따르는지 | `base`, `tolerance` |
-| `hierarchy` | 부모-자식 간 속성 비교 | `property`, `relation` |
+| checker | 검사 내용 | params 예시 | 제공하는 템플릿 변수 |
+|---------|----------|-------------|---------------------|
+| `contrast_ratio` | 전경/배경 색상 대비 비율 | `min_ratio`, `target` | `{actual}`, `{min_ratio}`, `{fg_color}`, `{bg_color}` |
+| `min_value` | 속성의 최소값 | `property`, `min`, `unit` | `{actual}`, `{min}`, `{property}` |
+| `max_value` | 속성의 최대값 | `property`, `max`, `unit` | `{actual}`, `{max}`, `{property}` |
+| `range` | 속성이 범위 안에 있는지 | `property`, `min`, `max` | `{actual}`, `{min}`, `{max}` |
+| `ratio` | 두 값의 비율 | `numerator`, `denominator`, `min`, `max` | `{actual}`, `{min}`, `{max}` |
+| `match` | 속성이 허용 값 중 하나인지 | `property`, `allowed` | `{actual}`, `{allowed}` |
+| `spacing_scale` | 간격이 정해진 스케일을 따르는지 | `base`, `tolerance` | `{actual}`, `{base}`, `{nearest}` |
+| `hierarchy` | 부모-자식 간 속성 비교 | `property`, `relation` | `{parent_value}`, `{child_value}` |
 
 새 규칙 추가 시: 기존 checker + 다른 params면 JSON만 추가. 새 checker가 필요하면 Rust 추가.
+
+### 메시지 템플릿 문법
+
+`message`와 `suggestion` 필드는 `{key}` 형식의 템플릿 변수를 지원한다.
+
+- 문법: `{variable_name}` — 단순 문자열 치환
+- 사용 가능한 변수: 각 checker가 제공 (위 테이블의 "제공하는 템플릿 변수" 컬럼 참고)
+- `params`의 키도 변수로 사용 가능 (예: `{min_ratio}`)
+- 해석 불가능한 변수는 원문 그대로 유지 (에러 아님)
+
+### contrast_ratio 체커: 배경색 결정 방식
+
+텍스트의 전경색은 해당 노드의 fill에서 가져온다. 배경색은 다음 전략으로 결정:
+
+1. 조상 노드를 위로 순회하며, **가장 가까운 solid fill을 가진 노드**의 첫 번째 solid fill 색상을 배경으로 사용
+2. 조상 중 solid fill이 없으면 흰색(`#FFFFFF`)을 기본 배경으로 가정
+
+**알려진 제한사항**: 그라데이션 배경, 이미지 배경, 여러 레이어의 opacity 합성은 무시된다. 이는 대부분의 실무 케이스를 커버하는 실용적 단순화이며, 향후 개선 가능.
+
+### 규칙 로드 시 검증
+
+`ode review` 실행 시, 규칙 파일을 로드하면서 다음을 검증:
+- `checker` 이름이 등록된 Rust 체커와 일치하는지
+- `params`에 해당 checker의 필수 키가 있는지
+
+미등록 checker를 참조하는 규칙은 **건너뛰되 warning으로 보고** — 나머지 규칙은 정상 실행된다.
 
 ### 맥락(context) 결정 방식
 
 1. `--context web` 플래그로 명시
 2. 미지정 시 문서의 `views`에서 추론 (Print view → print, Web view → web)
-3. views도 없으면 `web` 기본값
+3. **복수 view 타입이 존재하면**: 감지된 모든 context에 대해 규칙을 합산 실행 (union). 출력에 `"contexts_detected": ["web", "print"]` 포함.
+4. views도 없으면 `web` 기본값
 
 ---
 
@@ -393,9 +439,17 @@ ode guide --context print              # 인쇄 관련 가이드 필터 (JSON)
 ode guide --related accessibility      # 관련 가이드 나열 (JSON)
 ```
 
-출력 규칙:
-- 가이드 내용 → **마크다운 그대로** (에이전트가 자연어로 읽는 게 효과적)
-- 목록 조회 → **JSON** (기존 CLI 일관성)
+출력 규칙 — 모든 출력은 JSON envelope로 감싼다 (기존 CLI의 "모든 출력은 JSON" 원칙 준수):
+
+가이드 내용 조회:
+```json
+{"status": "ok", "format": "markdown", "content": "# 공간 구성\n\n## 핵심 원칙\n..."}
+```
+
+목록 조회:
+```json
+{"status": "ok", "layers": [{"id": "spatial-composition", "name": "공간 구성", ...}]}
+```
 
 #### `ode review`
 
@@ -418,9 +472,11 @@ ode review design.ode.json --layer accessibility  # 특정 레이어만
 
 ### `ode review` 출력
 
+기존 CLI 출력 규약과 일관: `"status": "ok"` (리뷰 완료), issues 배열은 기존 `ValidationIssue`와 호환되는 구조.
+
 ```json
 {
-  "status": "reviewed",
+  "status": "ok",
   "context": "web",
   "summary": {
     "errors": 1,
@@ -431,9 +487,8 @@ ode review design.ode.json --layer accessibility  # 특정 레이어만
   "issues": [
     {
       "severity": "error",
-      "rule": "a11y-contrast-ratio-aa",
+      "code": "a11y-contrast-ratio-aa",
       "layer": "accessibility",
-      "node": "cta-text",
       "path": "nodes[3]",
       "message": "텍스트 대비 비율 3.2:1 — WCAG AA 기준 4.5:1 이상 필요",
       "suggestion": "텍스트 색상을 더 어둡게 하거나 배경을 더 밝게 변경"
@@ -442,6 +497,16 @@ ode review design.ode.json --layer accessibility  # 특정 레이어만
 }
 ```
 
+**validate 출력과의 호환성:** `code`, `path`, `message`, `suggestion` 필드는 기존 `ode validate` 출력과 동일. `severity`와 `layer`가 추가 필드. 에이전트가 동일한 파싱 로직으로 양쪽 결과를 처리 가능.
+
+### 종료 코드
+
+기존 CLI 종료 코드 체계를 따른다:
+- `0` — 리뷰 완료 (issues 유무와 무관 — "issues 있음"은 성공적 리뷰)
+- `1` — 입력 에러 (JSON 파싱 실패, 파일 읽기 불가)
+- `2` — I/O 에러 (출력 쓰기 실패, knowledge 파일 읽기 실패)
+- `4` — 내부 에러 (예상치 못한 패닉)
+
 ### 새 크레이트: `ode-review`
 
 ```
@@ -449,15 +514,23 @@ ode-format  (data model)
     ^
 ode-core    (rendering + layout)
     ^
-ode-review  (design rules engine)
+ode-review  (design rules engine, depends on ode-format + ode-core)
     ^
 ode-cli     (CLI, depends on all)
 ```
+
+`ode-review`의 의존성:
+- `ode-format` — 노드 트리 순회, 속성 접근 (`Document`, `Node`, `NodeKind`)
+- `ode-core` — 색상 변환 로직 (`contrast_ratio` 계산에 필요)
+
+`ode-review`는 **해석 완료된 `Document`** (StableId → NodeId 변환 후)에 대해 동작한다. wire format(`DocumentWire`)이 아님. 이유: checker들이 토큰 바인딩이 해석된 실제 색상값, 레이아웃 계산 결과 등에 접근해야 함.
 
 `ode-review`가 별도 크레이트인 이유:
 - contrast_ratio 계산에 색상 변환 로직 필요 (`ode-core` 의존)
 - 규칙 파일 파싱 + checker 레지스트리 + 노드 트리 순회 — 독립적 책임
 - 라이브러리로 재사용 가능
+
+**참고:** 기존 구조 검증(`ode validate`)은 `ode-cli` 내장. 향후 `ode-review`가 입력 문서의 구조적 정합성을 사전 확인해야 할 경우, 검증 로직을 공유 위치(`ode-format` 또는 별도 `ode-validate`)로 추출하는 리팩터링을 고려.
 
 ---
 
@@ -527,6 +600,20 @@ ode-cli     (CLI, depends on all)
 기존: ode-cli → ode-format, ode-core, ode-export, ode-import, ode-text
 추가: ode-cli → ode-review (새)
 ```
+
+### 구현 단계
+
+**Phase 1 — 엔진 + 핵심 2개 레이어** (end-to-end 검증)
+- `ode-review` 크레이트: 규칙 로더, checker 레지스트리, 노드 순회
+- `ode-cli`: `ode guide`, `ode review` 커맨드
+- `design-knowledge/index.json` + discovery
+- 콘텐츠: `accessibility` 레이어 (가이드 + 규칙 3~4개), `spatial-composition` 레이어 (가이드 + 규칙 3~4개)
+- checker 구현: `contrast_ratio`, `min_value`, `spacing_scale`
+
+**Phase 2 — 나머지 레이어 확장**
+- 나머지 7개 레이어 가이드 작성
+- 추가 checker 구현 (`max_value`, `range`, `match`, `hierarchy`, `ratio`)
+- 플랫폼별 규칙 추가
 
 ### 테스트 전략
 
