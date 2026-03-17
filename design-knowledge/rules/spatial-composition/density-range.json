@@ -1,0 +1,21 @@
+[
+  {
+    "id": "density-range",
+    "layer": "spatial-composition",
+    "severity": "info",
+    "checker": "min_value",
+    "params": {
+      "property": "height",
+      "min": 24.0
+    },
+    "applies_to": {
+      "node_kinds": ["frame"],
+      "contexts": ["web"]
+    },
+    "message": "Frame height {actual}px is below the comfortable minimum of {min}px for interactive elements",
+    "suggestion": "Increase element height to at least {min}px for comfortable density. Compact: 32px, Comfortable: 40px, Spacious: 48px.",
+    "references": [
+      "https://m3.material.io/foundations/layout/understanding-layout/spacing"
+    ]
+  }
+]

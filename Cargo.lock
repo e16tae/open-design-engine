@@ -1134,6 +1134,7 @@ dependencies = [
  "ode-export",
  "ode-format",
  "ode-import",
+ "ode-review",
  "ode-text",
  "schemars",
  "serde",
@@ -1195,6 +1196,16 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "ode-review"
+version = "0.1.0"
+dependencies = [
+ "ode-format",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

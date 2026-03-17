@@ -15,6 +15,7 @@ ode-text = { path = "../ode-text" }
 ode-core = { path = "../ode-core" }
 ode-export = { path = "../ode-export" }
 ode-import = { path = "../ode-import" }
+ode-review = { path = "../ode-review" }
 clap = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

@@ -944,3 +944,362 @@ fn find_mode<'a>(
     }
     None
 }
+
+// ─── ode guide ───
+
+/// Index structure for design-knowledge/index.json
+#[derive(serde::Deserialize)]
+struct KnowledgeIndex {
+    layers: Vec<KnowledgeLayer>,
+}
+
+#[derive(serde::Deserialize)]
+struct KnowledgeLayer {
+    id: String,
+    name: String,
+    #[serde(default)]
+    contexts: Vec<String>,
+    #[serde(default)]
+    guide: Option<String>,
+    #[serde(default)]
+    rules: Vec<String>,
+    #[serde(default)]
+    related: Vec<String>,
+}
+
+pub fn cmd_guide(
+    layer_id: Option<&str>,
+    context: Option<&str>,
+    section: Option<&str>,
+    related: Option<&str>,
+) -> i32 {
+    let knowledge_dir = match crate::knowledge::find_knowledge_dir() {
+        Some(d) => d,
+        None => {
+            print_json(&ErrorResponse::new(
+                "KNOWLEDGE_NOT_FOUND",
+                "knowledge",
+                "design-knowledge directory not found",
+            ));
+            return EXIT_IO;
+        }
+    };
+
+    let index_path = knowledge_dir.join("index.json");
+    let index_str = match std::fs::read_to_string(&index_path) {
+        Ok(s) => s,
+        Err(e) => {
+            print_json(&ErrorResponse::new(
+                "IO_ERROR",
+                "io",
+                &format!("failed to read index.json: {e}"),
+            ));
+            return EXIT_IO;
+        }
+    };
+
+    let index: KnowledgeIndex = match serde_json::from_str(&index_str) {
+        Ok(i) => i,
+        Err(e) => {
+            print_json(&ErrorResponse::new(
+                "PARSE_FAILED",
+                "parse",
+                &format!("failed to parse index.json: {e}"),
+            ));
+            return EXIT_INPUT;
+        }
+    };
+
+    // If --related is given, find guides related to that layer
+    if let Some(related_layer) = related {
+        let source = index.layers.iter().find(|l| l.id == related_layer);
+        let related_ids: Vec<&str> = match source {
+            Some(l) => l.related.iter().map(|s| s.as_str()).collect(),
+            None => {
+                print_json(&ErrorResponse::new(
+                    "LAYER_NOT_FOUND",
+                    "knowledge",
+                    &format!("layer '{related_layer}' not found in index"),
+                ));
+                return EXIT_INPUT;
+            }
+        };
+
+        let layers: Vec<GuideLayerInfo> = index
+            .layers
+            .iter()
+            .filter(|l| related_ids.contains(&l.id.as_str()))
+            .map(|l| GuideLayerInfo {
+                id: l.id.clone(),
+                name: l.name.clone(),
+                contexts: l.contexts.clone(),
+            })
+            .collect();
+
+        print_json(&GuideListResponse {
+            status: "ok",
+            layers,
+        });
+        return EXIT_OK;
+    }
+
+    // If no layer_id: list all layers
+    if layer_id.is_none() {
+        let mut layers: Vec<GuideLayerInfo> = index
+            .layers
+            .iter()
+            .map(|l| GuideLayerInfo {
+                id: l.id.clone(),
+                name: l.name.clone(),
+                contexts: l.contexts.clone(),
+            })
+            .collect();
+
+        // Filter by context if provided
+        if let Some(ctx) = context {
+            layers.retain(|l| l.contexts.is_empty() || l.contexts.iter().any(|c| c == ctx));
+        }
+
+        print_json(&GuideListResponse {
+            status: "ok",
+            layers,
+        });
+        return EXIT_OK;
+    }
+
+    // layer_id given: find the layer and return its guide content
+    let layer_id = layer_id.unwrap();
+    let layer = match index.layers.iter().find(|l| l.id == layer_id) {
+        Some(l) => l,
+        None => {
+            print_json(&ErrorResponse::new(
+                "LAYER_NOT_FOUND",
+                "knowledge",
+                &format!("layer '{layer_id}' not found in index"),
+            ));
+            return EXIT_INPUT;
+        }
+    };
+
+    let guide_path = match &layer.guide {
+        Some(g) => {
+            // Reject absolute paths and traversals
+            if Path::new(g).is_absolute() || g.contains("..") {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PATH",
+                    "knowledge",
+                    &format!("guide path escapes knowledge dir: {g}"),
+                ));
+                return EXIT_INPUT;
+            }
+            knowledge_dir.join(g)
+        }
+        None => {
+            print_json(&ErrorResponse::new(
+                "NO_GUIDE",
+                "knowledge",
+                &format!("layer '{layer_id}' has no associated guide file"),
+            ));
+            return EXIT_INPUT;
+        }
+    };
+
+    let content = match std::fs::read_to_string(&guide_path) {
+        Ok(s) => s,
+        Err(e) => {
+            print_json(&ErrorResponse::new(
+                "IO_ERROR",
+                "io",
+                &format!("failed to read guide file: {e}"),
+            ));
+            return EXIT_IO;
+        }
+    };
+
+    let content = if let Some(section_name) = section {
+        match extract_section(&content, section_name) {
+            Some(s) => s,
+            None => {
+                print_json(&ErrorResponse::new(
+                    "SECTION_NOT_FOUND",
+                    "knowledge",
+                    &format!("section '{section_name}' not found in guide for '{layer_id}'"),
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    } else {
+        content
+    };
+
+    print_json(&GuideContentResponse {
+        status: "ok",
+        format: "markdown",
+        content,
+    });
+    EXIT_OK
+}
+
+/// Extract a section from markdown by heading name.
+///
+/// Finds `## {section_name}` (case-insensitive) and returns everything
+/// from that heading until the next `## ` heading or end of file.
+fn extract_section(markdown: &str, section_name: &str) -> Option<String> {
+    let section_lower = section_name.to_lowercase();
+    let lines: Vec<&str> = markdown.lines().collect();
+
+    let mut start = None;
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("## ") {
+            let heading = trimmed.trim_start_matches("## ").trim().to_lowercase();
+            if heading == section_lower {
+                start = Some(i);
+                break;
+            }
+        }
+    }
+
+    let start = start?;
+    let mut end = lines.len();
+    for i in (start + 1)..lines.len() {
+        let trimmed = lines[i].trim();
+        if trimmed.starts_with("## ") {
+            end = i;
+            break;
+        }
+    }
+
+    let section: String = lines[start..end].join("\n");
+    let trimmed = section.trim_end().to_string();
+    Some(trimmed)
+}
+
+// ─── ode review ───
+
+pub fn cmd_review(file: &str, context: Option<&str>, layer: Option<&str>) -> i32 {
+    let knowledge_dir = match crate::knowledge::find_knowledge_dir() {
+        Some(d) => d,
+        None => {
+            print_json(&ErrorResponse::new(
+                "KNOWLEDGE_NOT_FOUND",
+                "knowledge",
+                "design-knowledge directory not found",
+            ));
+            return EXIT_IO;
+        }
+    };
+
+    let json_str = match load_input(file) {
+        Ok(s) => s,
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
+    };
+
+    let doc: Document = match serde_json::from_str(&json_str) {
+        Ok(d) => d,
+        Err(e) => {
+            print_json(&ErrorResponse::new(
+                "PARSE_FAILED",
+                "parse",
+                &e.to_string(),
+            ));
+            return EXIT_INPUT;
+        }
+    };
+
+    // Read index.json to find rule paths
+    let index_path = knowledge_dir.join("index.json");
+    let index_str = match std::fs::read_to_string(&index_path) {
+        Ok(s) => s,
+        Err(e) => {
+            print_json(&ErrorResponse::new(
+                "IO_ERROR",
+                "io",
+                &format!("failed to read index.json: {e}"),
+            ));
+            return EXIT_IO;
+        }
+    };
+
+    let index: KnowledgeIndex = match serde_json::from_str(&index_str) {
+        Ok(i) => i,
+        Err(e) => {
+            print_json(&ErrorResponse::new(
+                "PARSE_FAILED",
+                "parse",
+                &format!("failed to parse index.json: {e}"),
+            ));
+            return EXIT_INPUT;
+        }
+    };
+
+    // Collect rule file paths, filtered by --layer if given
+    let rule_paths: Vec<&str> = index
+        .layers
+        .iter()
+        .filter(|l| match layer {
+            Some(filter) => l.id == filter,
+            None => true,
+        })
+        .flat_map(|l| l.rules.iter().map(|s| s.as_str()))
+        .collect();
+
+    let rules = if rule_paths.is_empty() {
+        vec![]
+    } else {
+        match ode_review::load_rules_from_paths(&knowledge_dir, &rule_paths) {
+            Ok(r) => r,
+            Err(e) => {
+                print_json(&ErrorResponse::new(
+                    "IO_ERROR",
+                    "io",
+                    &format!("failed to load rules: {e}"),
+                ));
+                return EXIT_IO;
+            }
+        }
+    };
+
+    let registry = ode_review::checkers::default_registry();
+    let result = ode_review::review_document(&doc, &rules, context, &registry);
+
+    let response = ReviewResponse {
+        status: "ok",
+        context: serde_json::to_value(&result.contexts).unwrap_or_default(),
+        summary: result.summary,
+        issues: result.issues,
+        skipped_rules: result.skipped_rules,
+        warnings: vec![],
+    };
+    print_json(&response);
+    EXIT_OK
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_section;
+
+    #[test]
+    fn extract_existing_section() {
+        let md = "# Title\n\n## Section A\nContent A\n\n## Section B\nContent B\n";
+        let result = extract_section(md, "Section A").unwrap();
+        assert!(result.contains("Content A"));
+        assert!(!result.contains("Content B"));
+    }
+
+    #[test]
+    fn extract_section_case_insensitive() {
+        let md = "## My Section\nContent here\n## Next\n";
+        let result = extract_section(md, "my section").unwrap();
+        assert!(result.contains("Content here"));
+    }
+
+    #[test]
+    fn extract_nonexistent_section_returns_none() {
+        let md = "## Only Section\nContent\n";
+        assert!(extract_section(md, "Missing").is_none());
+    }
+}

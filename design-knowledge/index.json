@@ -1,0 +1,28 @@
+{
+  "layers": [
+    {
+      "id": "accessibility",
+      "name": "접근성",
+      "contexts": ["web", "mobile-app", "print", "presentation"],
+      "guide": "guides/accessibility.md",
+      "rules": [
+        "rules/accessibility/contrast-ratio.json",
+        "rules/accessibility/touch-target-size.json",
+        "rules/accessibility/font-size-minimum.json"
+      ],
+      "related": ["design-principles", "spatial-composition"]
+    },
+    {
+      "id": "spatial-composition",
+      "name": "공간 구성",
+      "contexts": ["web", "mobile-app", "print", "presentation"],
+      "guide": "guides/spatial-composition.md",
+      "rules": [
+        "rules/spatial-composition/minimum-spacing.json",
+        "rules/spatial-composition/density-range.json",
+        "rules/spatial-composition/alignment-consistency.json"
+      ],
+      "related": ["design-principles", "responsive-adaptive", "accessibility"]
+    }
+  ]
+}

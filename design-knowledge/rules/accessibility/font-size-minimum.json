@@ -1,0 +1,21 @@
+[
+  {
+    "id": "font-size-minimum",
+    "layer": "accessibility",
+    "severity": "warning",
+    "checker": "min_value",
+    "params": {
+      "property": "font_size",
+      "min": 12.0
+    },
+    "applies_to": {
+      "node_kinds": ["text"],
+      "contexts": ["web", "mobile-app"]
+    },
+    "message": "Font size {actual}px is below the minimum readable size of {min}px for body text",
+    "suggestion": "Increase font size to at least {min}px. For web body text, 16px is recommended; for mobile, 14px minimum.",
+    "references": [
+      "https://www.w3.org/WAI/WCAG21/Understanding/resize-text.html"
+    ]
+  }
+]

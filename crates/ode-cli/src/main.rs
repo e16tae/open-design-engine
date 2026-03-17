@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 
 mod commands;
+mod knowledge;
 mod output;
 mod validate;
 
@@ -85,6 +86,31 @@ enum Command {
     Tokens {
         #[command(subcommand)]
         action: TokenAction,
+    },
+    /// Query design knowledge guides
+    Guide {
+        /// Guide layer ID (e.g., "accessibility", "spatial-composition")
+        layer_id: Option<String>,
+        /// Filter by context (e.g., "web", "print")
+        #[arg(long)]
+        context: Option<String>,
+        /// Show only a specific section
+        #[arg(long)]
+        section: Option<String>,
+        /// List guides related to a layer
+        #[arg(long)]
+        related: Option<String>,
+    },
+    /// Review a design against knowledge-based rules
+    Review {
+        /// Input file (.ode.json) or - for stdin
+        file: String,
+        /// Override context detection
+        #[arg(long)]
+        context: Option<String>,
+        /// Only check rules from a specific layer
+        #[arg(long)]
+        layer: Option<String>,
     },
 }
 
@@ -203,6 +229,22 @@ fn main() {
                 output,
             } => commands::cmd_tokens_set_mode(&file, &collection, &mode, output.as_deref()),
         },
+        Command::Guide {
+            layer_id,
+            context,
+            section,
+            related,
+        } => commands::cmd_guide(
+            layer_id.as_deref(),
+            context.as_deref(),
+            section.as_deref(),
+            related.as_deref(),
+        ),
+        Command::Review {
+            file,
+            context,
+            layer,
+        } => commands::cmd_review(&file, context.as_deref(), layer.as_deref()),
     };
 
     std::process::exit(exit_code);

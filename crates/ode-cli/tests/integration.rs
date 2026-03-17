@@ -389,3 +389,128 @@ fn inspect_stdin() {
     assert_eq!(result["name"], "Stdin Inspect");
     assert_eq!(result["node_count"], 1);
 }
+
+// ─── ode guide ───
+
+#[test]
+fn guide_lists_layers() {
+    let output = ode_cmd().args(["guide"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let json = parse_json(&output);
+    assert_eq!(json["status"], "ok");
+    let layers = json["layers"].as_array().unwrap();
+    assert!(layers.len() >= 2);
+}
+
+#[test]
+fn guide_shows_accessibility() {
+    let output = ode_cmd().args(["guide", "accessibility"]).output().unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json = parse_json(&output);
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["format"], "markdown");
+    let content = json["content"].as_str().unwrap();
+    assert!(
+        content.contains("접근성") || content.contains("Accessibility"),
+        "Expected guide content to mention accessibility, got: {}",
+        &content[..100.min(content.len())]
+    );
+}
+
+#[test]
+fn guide_unknown_layer_returns_error() {
+    let output = ode_cmd().args(["guide", "nonexistent"]).output().unwrap();
+    assert_ne!(output.status.code(), Some(0));
+    let json = parse_json(&output);
+    assert_eq!(json["status"], "error");
+}
+
+// ─── ode review ───
+
+#[test]
+fn review_validates_document() {
+    let dir = std::env::temp_dir().join("ode_review_integ_test");
+    std::fs::create_dir_all(&dir).ok();
+    let file = dir.join("test.ode.json");
+    let _ = std::fs::remove_file(&file);
+
+    ode_cmd()
+        .args([
+            "new",
+            file.to_str().unwrap(),
+            "--width",
+            "400",
+            "--height",
+            "300",
+        ])
+        .output()
+        .unwrap();
+
+    let output = ode_cmd()
+        .args(["review", file.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json = parse_json(&output);
+    assert_eq!(json["status"], "ok");
+    assert!(json["summary"]["total"].as_u64().is_some());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn review_with_context_flag() {
+    let dir = std::env::temp_dir().join("ode_review_ctx_test");
+    std::fs::create_dir_all(&dir).ok();
+    let file = dir.join("test.ode.json");
+    let _ = std::fs::remove_file(&file);
+
+    ode_cmd()
+        .args([
+            "new",
+            file.to_str().unwrap(),
+            "--width",
+            "400",
+            "--height",
+            "300",
+        ])
+        .output()
+        .unwrap();
+
+    let output = ode_cmd()
+        .args([
+            "review",
+            file.to_str().unwrap(),
+            "--context",
+            "print",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json = parse_json(&output);
+    assert_eq!(json["status"], "ok");
+    // Context is serialized as an array of strings
+    let ctx_arr = json["context"].as_array().unwrap();
+    assert!(
+        ctx_arr.iter().any(|v| v == "print"),
+        "Expected context to contain 'print', got: {:?}",
+        ctx_arr
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
