@@ -38,6 +38,7 @@ pub fn review_document(
 
     let parent_map = traverse::build_parent_map(doc);
     let mut issues = Vec::new();
+    let mut rules_run: usize = 0;
     let mut passed: usize = 0;
     let mut skipped_rules = Vec::new();
 
@@ -48,6 +49,7 @@ pub fn review_document(
 
         match registry.run(&rule.checker, &rule.params, doc, &parent_map, &rule.applies_to) {
             Ok(checker_issues) => {
+                rules_run += 1;
                 if checker_issues.is_empty() {
                     passed += 1;
                 } else {
@@ -69,15 +71,17 @@ pub fn review_document(
         }
     }
 
-    let total = passed + issues.len();
+    let total = rules_run;
     let errors = issues.iter().filter(|i| i.severity == "error").count();
     let warnings = issues.iter().filter(|i| i.severity == "warning").count();
+    let infos = issues.iter().filter(|i| i.severity == "info").count();
 
     ReviewResult {
         contexts,
         summary: ReviewSummary {
             errors,
             warnings,
+            infos,
             passed,
             total,
         },

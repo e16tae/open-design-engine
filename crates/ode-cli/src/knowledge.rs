@@ -19,7 +19,8 @@ pub fn find_knowledge_dir() -> Option<PathBuf> {
         }
     }
 
-    // 2. Build-time: CARGO_MANIFEST_DIR -> ../../design-knowledge
+    // 2. Build-time path: only useful during `cargo run` development.
+    // In installed binaries, this path no longer exists and falls through to step 3.
     {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         if let Some(root) = manifest.parent().and_then(|p| p.parent()) {

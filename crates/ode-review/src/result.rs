@@ -10,15 +10,18 @@ pub struct ReviewResult {
     pub summary: ReviewSummary,
     /// Every issue found, in the order rules were evaluated.
     pub issues: Vec<ReviewIssue>,
-    /// Rule ids that were skipped because their context did not match.
+    /// Rule IDs that could not be run because their checker was not found in the registry.
     pub skipped_rules: Vec<String>,
 }
 
 /// Aggregate pass/fail counts.
+///
+/// `total` is the number of rules evaluated (not the number of issues).
 #[derive(Debug, Clone, Serialize)]
 pub struct ReviewSummary {
     pub errors: usize,
     pub warnings: usize,
+    pub infos: usize,
     pub passed: usize,
     pub total: usize,
 }

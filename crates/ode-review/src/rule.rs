@@ -107,9 +107,17 @@ pub fn load_rules_from_dir(dir: &Path) -> std::io::Result<Vec<Rule>> {
 /// Load rules from specific file paths, resolved relative to `base`.
 ///
 /// Each file must contain a JSON array of [`Rule`] objects.
+/// Rejects paths that are absolute or contain `..` to prevent path traversal.
 pub fn load_rules_from_paths(base: &Path, paths: &[&str]) -> std::io::Result<Vec<Rule>> {
     let mut rules = Vec::new();
     for rel in paths {
+        // Reject absolute paths and traversals
+        if Path::new(rel).is_absolute() || rel.contains("..") {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("rule path escapes knowledge dir: {rel}"),
+            ));
+        }
         let path = base.join(rel);
         let contents = std::fs::read_to_string(&path)?;
         let mut file_rules: Vec<Rule> = serde_json::from_str(&contents)

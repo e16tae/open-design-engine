@@ -70,7 +70,7 @@ fn is_on_scale(value: f32, base: f32, tolerance: f32) -> bool {
     if base.abs() < f32::EPSILON {
         return true; // Avoid division by zero.
     }
-    let remainder = value % base;
+    let remainder = value.abs() % base;
     remainder <= tolerance || (base - remainder) <= tolerance
 }
 
@@ -112,6 +112,13 @@ mod tests {
     fn off_scale_values() {
         assert!(!is_on_scale(10.0, 8.0, 0.5));
         assert!(!is_on_scale(13.0, 8.0, 0.5));
+    }
+
+    #[test]
+    fn negative_values_use_absolute() {
+        assert!(is_on_scale(-8.0, 8.0, 0.5));
+        assert!(is_on_scale(-16.0, 8.0, 0.5));
+        assert!(!is_on_scale(-10.0, 8.0, 0.5));
     }
 
     #[test]

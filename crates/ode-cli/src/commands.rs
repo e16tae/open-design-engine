@@ -1082,7 +1082,18 @@ pub fn cmd_guide(
     };
 
     let guide_path = match &layer.guide {
-        Some(g) => knowledge_dir.join(g),
+        Some(g) => {
+            // Reject absolute paths and traversals
+            if Path::new(g).is_absolute() || g.contains("..") {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PATH",
+                    "knowledge",
+                    &format!("guide path escapes knowledge dir: {g}"),
+                ));
+                return EXIT_INPUT;
+            }
+            knowledge_dir.join(g)
+        }
         None => {
             print_json(&ErrorResponse::new(
                 "NO_GUIDE",
@@ -1265,4 +1276,30 @@ pub fn cmd_review(file: &str, context: Option<&str>, layer: Option<&str>) -> i32
     };
     print_json(&response);
     EXIT_OK
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_section;
+
+    #[test]
+    fn extract_existing_section() {
+        let md = "# Title\n\n## Section A\nContent A\n\n## Section B\nContent B\n";
+        let result = extract_section(md, "Section A").unwrap();
+        assert!(result.contains("Content A"));
+        assert!(!result.contains("Content B"));
+    }
+
+    #[test]
+    fn extract_section_case_insensitive() {
+        let md = "## My Section\nContent here\n## Next\n";
+        let result = extract_section(md, "my section").unwrap();
+        assert!(result.contains("Content here"));
+    }
+
+    #[test]
+    fn extract_nonexistent_section_returns_none() {
+        let md = "## Only Section\nContent\n";
+        assert!(extract_section(md, "Missing").is_none());
+    }
 }
