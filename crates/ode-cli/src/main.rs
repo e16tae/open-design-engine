@@ -175,6 +175,19 @@ enum Command {
         /// Node stable_id to delete
         stable_id: String,
     },
+    /// Move a node to a different parent
+    Move {
+        /// Document file path
+        file: String,
+        /// Node stable_id to move
+        stable_id: String,
+        /// Target parent stable_id (or "root")
+        #[arg(long)]
+        parent: String,
+        /// Insertion index (0-based, default: append)
+        #[arg(long)]
+        index: Option<usize>,
+    },
     /// Add a node to a document
     Add {
         /// Node kind: frame, group, text, vector, image
@@ -399,6 +412,7 @@ fn main() {
             line_height.as_deref(),
         ),
         Command::Delete { file, stable_id } => mutate::cmd_delete(&file, &stable_id),
+        Command::Move { file, stable_id, parent, index } => mutate::cmd_move(&file, &stable_id, &parent, index),
         Command::Add {
             kind,
             file,

@@ -1,4 +1,7 @@
-use crate::output::*;
+use crate::output::{
+    AddResponse, DeleteResponse, ErrorResponse, MoveResponse, SetResponse, Warning,
+    EXIT_INPUT, EXIT_INTERNAL, EXIT_IO, EXIT_OK, print_json,
+};
 use ode_format::wire::{
     ContainerPropsWire, DocumentWire, FrameDataWire, GroupDataWire, ImageDataWire, NodeKindWire,
     NodeWire, TextDataWire, ViewKindWire,
@@ -1045,6 +1048,106 @@ pub fn cmd_set(
         status: "ok",
         stable_id: stable_id.to_string(),
         modified,
+    });
+    EXIT_OK
+}
+
+// ─── ode move ───
+
+pub fn cmd_move(file: &str, stable_id: &str, parent: &str, index: Option<usize>) -> i32 {
+    let (file_path, mut wire) = match load_wire(file) {
+        Ok(v) => v,
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
+    };
+
+    // Step 1: verify source node exists
+    if wire.find_node(stable_id).is_none() {
+        print_json(&ErrorResponse::new(
+            "NOT_FOUND",
+            "validate",
+            &format!("node '{stable_id}' not found"),
+        ));
+        return EXIT_INPUT;
+    }
+
+    // Step 2: cycle detection (skip if target is "root")
+    if parent != "root" {
+        // Also verify target node exists
+        if wire.find_node(parent).is_none() {
+            print_json(&ErrorResponse::new(
+                "NOT_FOUND",
+                "validate",
+                &format!("target node '{parent}' not found"),
+            ));
+            return EXIT_INPUT;
+        }
+
+        // Check that parent is NOT a descendant of source (and is not source itself)
+        if parent == stable_id {
+            print_json(&ErrorResponse::new(
+                "CYCLE_DETECTED",
+                "validate",
+                "cannot move a node into itself",
+            ));
+            return EXIT_INPUT;
+        }
+        let descendants = wire.collect_descendants(stable_id);
+        if descendants.iter().any(|d| d == parent) {
+            print_json(&ErrorResponse::new(
+                "CYCLE_DETECTED",
+                "validate",
+                &format!("cannot move node '{stable_id}' into its own descendant '{parent}'"),
+            ));
+            return EXIT_INPUT;
+        }
+
+        // Verify target is a container
+        let target_is_container = wire
+            .find_node(parent)
+            .map(|n| DocumentWire::is_container(&n.kind))
+            .unwrap_or(false);
+        if !target_is_container {
+            print_json(&ErrorResponse::new(
+                "NOT_CONTAINER",
+                "validate",
+                &format!("target node '{parent}' is not a container"),
+            ));
+            return EXIT_INPUT;
+        }
+    }
+
+    // Step 3: remove source from old parent
+    wire.remove_child_from_parent(stable_id);
+    wire.canvas.retain(|c| c != stable_id);
+
+    // Step 4: insert into new parent
+    let final_index = if parent == "root" {
+        let pos = index.unwrap_or(wire.canvas.len()).min(wire.canvas.len());
+        wire.canvas.insert(pos, stable_id.to_string());
+        pos
+    } else {
+        let parent_id_owned = parent.to_string();
+        let parent_mut = wire.find_node_mut(&parent_id_owned).unwrap();
+        let children = DocumentWire::children_of_kind_mut(&mut parent_mut.kind).unwrap();
+        let pos = index.unwrap_or(children.len()).min(children.len());
+        children.insert(pos, stable_id.to_string());
+        pos
+    };
+
+    // Save
+    if let Err((code, err)) = save_wire(&file_path, &wire) {
+        print_json(&err);
+        return code;
+    }
+
+    print_json(&MoveResponse {
+        status: "ok",
+        stable_id: stable_id.to_string(),
+        new_parent: parent.to_string(),
+        index: final_index,
     });
     EXIT_OK
 }
