@@ -182,15 +182,6 @@ impl<'a> ConvertContext<'a> {
             _ => {}
         }
 
-        // ── Mask warning ─────────────────────────────────────────────
-        if fnode.is_mask == Some(true) {
-            self.warnings.push(ImportWarning {
-                node_id: fnode.id.clone(),
-                node_name: fnode.name.clone(),
-                message: "Mask nodes are not supported in ODE; mask flag ignored".to_string(),
-            });
-        }
-
         // ── Common fields ────────────────────────────────────────────
         let stable_id = self
             .node_id_map
@@ -284,7 +275,7 @@ impl<'a> ConvertContext<'a> {
             opacity,
             blend_mode,
             visible,
-            is_mask: false,
+            is_mask: fnode.is_mask.unwrap_or(false),
             constraints,
             layout_sizing,
             kind,
@@ -1049,7 +1040,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_mask_node_warns() {
+    fn convert_mask_node_sets_is_mask() {
         let masked = FigmaNode {
             id: "2:1".to_string(),
             name: "MaskRect".to_string(),
@@ -1068,8 +1059,22 @@ mod tests {
         };
         let file = make_file("Test", vec![frame]);
         let result = FigmaConverter::convert(file, None, HashMap::new()).unwrap();
-        assert_eq!(result.warnings.len(), 1);
-        assert!(result.warnings[0].message.contains("Mask"));
+        // Should have no warnings (mask is now supported)
+        assert_eq!(
+            result.warnings.len(),
+            0,
+            "Mask should not produce a warning; got: {:?}",
+            result.warnings
+        );
+        // The mask node should have is_mask = true
+        let mask_node = result
+            .document
+            .nodes
+            .iter()
+            .find(|(_, n)| n.name == "MaskRect")
+            .map(|(_, n)| n)
+            .expect("MaskRect node should exist");
+        assert!(mask_node.is_mask, "MaskRect should have is_mask=true");
     }
 
     #[test]
