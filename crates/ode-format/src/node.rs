@@ -573,6 +573,9 @@ pub struct Node {
     pub blend_mode: BlendMode,
     #[serde(default = "default_visible")]
     pub visible: bool,
+    /// When true, this node's outline clips subsequent siblings (Figma mask semantics).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_mask: bool,
     pub constraints: Option<Constraints>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout_sizing: Option<LayoutSizing>,
@@ -598,6 +601,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             visible: true,
+            is_mask: false,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Frame(Box::new(FrameData {
@@ -623,6 +627,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             visible: true,
+            is_mask: false,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Group(Box::new(GroupData {
@@ -640,6 +645,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             visible: true,
+            is_mask: false,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Vector(Box::new(VectorData {
@@ -659,6 +665,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             visible: true,
+            is_mask: false,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Text(Box::new(TextData {
@@ -682,6 +689,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             visible: true,
+            is_mask: false,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::BooleanOp(Box::new(BooleanOpData {
@@ -701,6 +709,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             visible: true,
+            is_mask: false,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Image(Box::new(ImageData {
@@ -721,6 +730,7 @@ impl Node {
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             visible: true,
+            is_mask: false,
             constraints: None,
             layout_sizing: None,
             kind: NodeKind::Instance(Box::new(InstanceData {
@@ -1168,5 +1178,30 @@ mod tests {
         let json = serde_json::to_string(&c).unwrap();
         let parsed: Constraints = serde_json::from_str(&json).unwrap();
         assert_eq!(c, parsed);
+    }
+
+    // ─── is_mask Tests ───
+
+    #[test]
+    fn node_is_mask_defaults_false() {
+        let node = Node::new_frame("F", 100.0, 100.0);
+        assert!(!node.is_mask);
+    }
+
+    #[test]
+    fn node_is_mask_serialization_round_trip() {
+        let mut node = Node::new_vector("Mask", VectorPath::default());
+        node.is_mask = true;
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("\"is_mask\":true"));
+        let deserialized: Node = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.is_mask);
+    }
+
+    #[test]
+    fn node_is_mask_absent_in_json_defaults_false() {
+        let json = r#"{"stable_id":"abc","name":"V","transform":{"a":1,"b":0,"c":0,"d":1,"tx":0,"ty":0},"opacity":1,"blend_mode":"normal","visible":true,"constraints":null,"kind":{"type":"group","children":[]}}"#;
+        let node: Node = serde_json::from_str(json).unwrap();
+        assert!(!node.is_mask);
     }
 }

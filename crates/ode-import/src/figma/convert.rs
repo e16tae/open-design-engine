@@ -284,6 +284,7 @@ impl<'a> ConvertContext<'a> {
             opacity,
             blend_mode,
             visible,
+            is_mask: false,
             constraints,
             layout_sizing,
             kind,

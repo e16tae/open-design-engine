@@ -68,6 +68,9 @@ pub struct NodeWire {
     pub blend_mode: BlendMode,
     #[serde(default = "default_visible")]
     pub visible: bool,
+    /// When true, this node's outline clips subsequent siblings (Figma mask semantics).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_mask: bool,
     pub constraints: Option<Constraints>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout_sizing: Option<LayoutSizing>,
@@ -247,6 +250,7 @@ impl DocumentWire {
                 opacity: nw.opacity,
                 blend_mode: nw.blend_mode,
                 visible: nw.visible,
+                is_mask: nw.is_mask,
                 constraints: nw.constraints,
                 layout_sizing: nw.layout_sizing.clone(),
                 // Placeholder kind — will be overwritten in pass 2
@@ -487,6 +491,7 @@ fn node_to_wire(node: &Node, resolve: &dyn Fn(&NodeId) -> String) -> NodeWire {
         opacity: node.opacity,
         blend_mode: node.blend_mode,
         visible: node.visible,
+        is_mask: node.is_mask,
         constraints: node.constraints,
         layout_sizing: node.layout_sizing.clone(),
         kind,
@@ -680,6 +685,7 @@ mod tests {
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
                     visible: true,
+                    is_mask: false,
                     constraints: None,
                     layout_sizing: None,
                     kind: NodeKindWire::Frame(FrameDataWire {
@@ -704,6 +710,7 @@ mod tests {
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
                     visible: true,
+                    is_mask: false,
                     constraints: None,
                     layout_sizing: None,
                     kind: NodeKindWire::Text(TextDataWire {
@@ -850,6 +857,7 @@ mod tests {
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
                     visible: true,
+                    is_mask: false,
                     constraints: None,
                     layout_sizing: None,
                     kind: NodeKindWire::Frame(FrameDataWire {
@@ -874,6 +882,7 @@ mod tests {
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
                     visible: true,
+                    is_mask: false,
                     constraints: None,
                     layout_sizing: None,
                     kind: NodeKindWire::Text(TextDataWire {
@@ -1017,6 +1026,7 @@ mod tests {
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
                     visible: true,
+                    is_mask: false,
                     constraints: None,
                     layout_sizing: None,
                     kind: NodeKindWire::Frame(FrameDataWire {
@@ -1041,6 +1051,7 @@ mod tests {
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
                     visible: true,
+                    is_mask: false,
                     constraints: None,
                     layout_sizing: None,
                     kind: NodeKindWire::Group(GroupDataWire {
@@ -1054,6 +1065,7 @@ mod tests {
                     opacity: 1.0,
                     blend_mode: BlendMode::Normal,
                     visible: true,
+                    is_mask: false,
                     constraints: None,
                     layout_sizing: None,
                     kind: NodeKindWire::Text(TextDataWire {
@@ -1160,6 +1172,7 @@ mod tests {
                 opacity: 1.0,
                 blend_mode: BlendMode::Normal,
                 visible: true,
+                is_mask: false,
                 constraints: None,
                 layout_sizing: None,
                 kind: NodeKindWire::Frame(FrameDataWire {

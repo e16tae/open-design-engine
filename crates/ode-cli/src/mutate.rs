@@ -321,6 +321,7 @@ pub fn cmd_add(
         opacity: 1.0,
         blend_mode: BlendMode::Normal,
         visible: true,
+        is_mask: false,
         constraints: None,
         layout_sizing: None,
         kind: node_kind,
