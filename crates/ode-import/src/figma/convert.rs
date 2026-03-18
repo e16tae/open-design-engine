@@ -306,6 +306,7 @@ impl<'a> ConvertContext<'a> {
             fnode.padding_left,
             fnode.item_spacing,
             fnode.layout_wrap.as_deref(),
+            fnode.counter_axis_spacing,
             &mut self.warnings,
         );
 
@@ -465,6 +466,7 @@ impl<'a> ConvertContext<'a> {
                 fnode.padding_left,
                 fnode.item_spacing,
                 fnode.layout_wrap.as_deref(),
+                fnode.counter_axis_spacing,
                 &mut self.warnings,
             );
 

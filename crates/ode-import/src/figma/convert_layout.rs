@@ -12,8 +12,7 @@ use crate::error::ImportWarning;
 
 /// Convert Figma auto-layout properties into an ODE `LayoutConfig`.
 ///
-/// Returns `None` if `layout_mode` is `None`, `"NONE"`, or `"GRID"` (with a
-/// warning for GRID).
+/// Returns `None` if `layout_mode` is `None` or `"NONE"`.
 #[allow(clippy::too_many_arguments)]
 pub fn convert_layout_config(
     layout_mode: Option<&str>,
@@ -25,27 +24,15 @@ pub fn convert_layout_config(
     pad_left: Option<f32>,
     item_spacing: Option<f32>,
     wrap: Option<&str>,
+    counter_axis_spacing: Option<f32>,
     warnings: &mut Vec<ImportWarning>,
 ) -> Option<LayoutConfig> {
+    let _ = warnings; // suppress unused warning when all modes are handled
     let mode = layout_mode?;
 
-    match mode {
-        "NONE" => return None,
-        "GRID" => {
-            warnings.push(ImportWarning {
-                node_id: String::new(),
-                node_name: String::new(),
-                message: "Grid layout mode is not supported, skipping layout".to_string(),
-            });
-            return None;
-        }
-        _ => {}
+    if mode == "NONE" {
+        return None;
     }
-
-    let direction = match mode {
-        "VERTICAL" => LayoutDirection::Vertical,
-        _ => LayoutDirection::Horizontal,
-    };
 
     let primary_axis_align = match primary_align {
         Some("CENTER") => PrimaryAxisAlign::Center,
@@ -69,6 +56,24 @@ pub fn convert_layout_config(
         left: pad_left.unwrap_or(0.0),
     };
 
+    if mode == "GRID" {
+        return Some(LayoutConfig {
+            mode: LayoutMode::Grid,
+            direction: LayoutDirection::Horizontal,
+            primary_axis_align,
+            counter_axis_align,
+            padding,
+            item_spacing: item_spacing.unwrap_or(0.0),
+            counter_axis_spacing: counter_axis_spacing.unwrap_or(0.0),
+            wrap: LayoutWrap::Wrap,
+        });
+    }
+
+    let direction = match mode {
+        "VERTICAL" => LayoutDirection::Vertical,
+        _ => LayoutDirection::Horizontal,
+    };
+
     let layout_wrap = match wrap {
         Some("WRAP") => LayoutWrap::Wrap,
         _ => LayoutWrap::NoWrap,
@@ -81,7 +86,7 @@ pub fn convert_layout_config(
         counter_axis_align,
         padding,
         item_spacing: item_spacing.unwrap_or(0.0),
-        counter_axis_spacing: 0.0,
+        counter_axis_spacing: counter_axis_spacing.unwrap_or(0.0),
         wrap: layout_wrap,
     })
 }
@@ -188,10 +193,12 @@ mod tests {
             Some(16.0),
             Some(12.0),
             Some("WRAP"),
+            None,
             &mut w,
         );
         assert!(w.is_empty());
         let config = config.expect("should produce a LayoutConfig");
+        assert_eq!(config.mode, LayoutMode::Flex);
         assert_eq!(config.direction, LayoutDirection::Horizontal);
         assert_eq!(config.primary_axis_align, PrimaryAxisAlign::SpaceBetween);
         assert_eq!(config.counter_axis_align, CounterAxisAlign::Center);
@@ -207,16 +214,7 @@ mod tests {
     fn test_layout_config_returns_none_for_none_mode() {
         let mut w = empty_warnings();
         let config = convert_layout_config(
-            Some("NONE"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            &mut w,
+            Some("NONE"), None, None, None, None, None, None, None, None, None, &mut w,
         );
         assert!(config.is_none());
         assert!(w.is_empty());
@@ -225,30 +223,33 @@ mod tests {
     #[test]
     fn test_layout_config_returns_none_for_missing_mode() {
         let mut w = empty_warnings();
-        let config =
-            convert_layout_config(None, None, None, None, None, None, None, None, None, &mut w);
+        let config = convert_layout_config(
+            None, None, None, None, None, None, None, None, None, None, &mut w,
+        );
         assert!(config.is_none());
         assert!(w.is_empty());
     }
 
     #[test]
-    fn test_layout_config_warns_for_grid() {
+    fn test_layout_config_grid_mode() {
         let mut w = empty_warnings();
         let config = convert_layout_config(
             Some("GRID"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            Some("MIN"),
+            Some("CENTER"),
+            Some(10.0), Some(10.0), Some(10.0), Some(10.0),
+            Some(8.0),
+            Some("WRAP"),
+            Some(12.0),
             &mut w,
         );
-        assert!(config.is_none());
-        assert_eq!(w.len(), 1);
-        assert!(w[0].message.contains("Grid"));
+        assert!(w.is_empty(), "GRID should not produce warnings: {:?}", w);
+        let config = config.expect("GRID should return Some(LayoutConfig)");
+        assert_eq!(config.mode, LayoutMode::Grid);
+        assert_eq!(config.direction, LayoutDirection::Horizontal);
+        assert_eq!(config.wrap, LayoutWrap::Wrap);
+        assert!((config.item_spacing - 8.0).abs() < f32::EPSILON);
+        assert!((config.counter_axis_spacing - 12.0).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -258,11 +259,9 @@ mod tests {
             Some("VERTICAL"),
             Some("MIN"),
             Some("STRETCH"),
-            None,
-            None,
-            None,
-            None,
+            None, None, None, None,
             Some(4.0),
+            None,
             None,
             &mut w,
         )
