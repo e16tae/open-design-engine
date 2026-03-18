@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 
 mod commands;
 mod knowledge;
+mod mutate;
 mod output;
 mod validate;
 
@@ -111,6 +112,41 @@ enum Command {
         /// Only check rules from a specific layer
         #[arg(long)]
         layer: Option<String>,
+    },
+    /// Add a node to a document
+    Add {
+        /// Node kind: frame, group, text, vector, image
+        kind: String,
+        /// Document file path
+        file: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        parent: Option<String>,
+        #[arg(long)]
+        index: Option<usize>,
+        #[arg(long)]
+        width: Option<f32>,
+        #[arg(long)]
+        height: Option<f32>,
+        #[arg(long)]
+        fill: Option<String>,
+        #[arg(long, value_name = "R or TL,TR,BR,BL")]
+        corner_radius: Option<String>,
+        #[arg(long)]
+        clips_content: Option<bool>,
+        #[arg(long)]
+        content: Option<String>,
+        #[arg(long)]
+        font_size: Option<f32>,
+        #[arg(long)]
+        font_family: Option<String>,
+        #[arg(long)]
+        shape: Option<String>,
+        #[arg(long)]
+        sides: Option<u32>,
+        #[arg(long)]
+        src: Option<String>,
     },
 }
 
@@ -245,6 +281,41 @@ fn main() {
             context,
             layer,
         } => commands::cmd_review(&file, context.as_deref(), layer.as_deref()),
+        Command::Add {
+            kind,
+            file,
+            name,
+            parent,
+            index,
+            width,
+            height,
+            fill,
+            corner_radius,
+            clips_content,
+            content,
+            font_size,
+            font_family,
+            shape,
+            sides,
+            src,
+        } => mutate::cmd_add(
+            &kind,
+            &file,
+            name.as_deref(),
+            parent.as_deref(),
+            index,
+            width,
+            height,
+            fill.as_deref(),
+            corner_radius.as_deref(),
+            clips_content,
+            content.as_deref(),
+            font_size,
+            font_family.as_deref(),
+            shape.as_deref(),
+            sides,
+            src.as_deref(),
+        ),
     };
 
     std::process::exit(exit_code);
