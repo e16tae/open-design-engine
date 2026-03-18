@@ -845,6 +845,9 @@ fn get_clip_path(
     layout_rect: Option<&crate::layout::LayoutRect>,
 ) -> Option<kurbo::BezPath> {
     if let NodeKind::Frame(ref data) = node.kind {
+        if !data.clips_content {
+            return None;
+        }
         let (w, h) = layout_rect
             .map(|r| (r.width, r.height))
             .unwrap_or((data.width, data.height));
@@ -2123,5 +2126,37 @@ mod tests {
             .collect();
         assert_eq!(fill_colors.len(), 1);
         assert_eq!(fill_colors[0], green);
+    }
+
+    #[test]
+    fn frame_clips_content_false_no_clip() {
+        let mut doc = Document::new("NoClip");
+        let mut frame = Node::new_frame("Root", 200.0, 200.0);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.clips_content = false;
+            data.visual.fills.push(Fill {
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(Color::Srgb {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    }),
+                },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: BlendMode::Normal,
+                visible: true,
+            });
+        }
+        let fid = doc.nodes.insert(frame);
+        doc.canvas.push(fid);
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        // The PushLayer for this frame should have clip: None
+        match &scene.commands[0] {
+            RenderCommand::PushLayer { clip, .. } => {
+                assert!(clip.is_none(), "clips_content=false should produce no clip");
+            }
+            other => panic!("Expected PushLayer, got {:?}", other),
+        }
     }
 }
