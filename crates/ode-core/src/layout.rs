@@ -299,21 +299,6 @@ fn infer_grid_columns(node: &Node) -> u16 {
 
 /// Build taffy Style for a container node.
 fn build_container_style(node: &Node, config: &LayoutConfig) -> Style {
-    let justify_content = match config.primary_axis_align {
-        PrimaryAxisAlign::Start => Some(JustifyContent::FlexStart),
-        PrimaryAxisAlign::Center => Some(JustifyContent::Center),
-        PrimaryAxisAlign::End => Some(JustifyContent::FlexEnd),
-        PrimaryAxisAlign::SpaceBetween => Some(JustifyContent::SpaceBetween),
-    };
-
-    let align_items = match config.counter_axis_align {
-        CounterAxisAlign::Start => Some(AlignItems::FlexStart),
-        CounterAxisAlign::Center => Some(AlignItems::Center),
-        CounterAxisAlign::End => Some(AlignItems::FlexEnd),
-        CounterAxisAlign::Stretch => Some(AlignItems::Stretch),
-        CounterAxisAlign::Baseline => Some(AlignItems::Baseline),
-    };
-
     let padding = Rect {
         top: LengthPercentage::Length(config.padding.top),
         right: LengthPercentage::Length(config.padding.right),
@@ -340,6 +325,21 @@ fn build_container_style(node: &Node, config: &LayoutConfig) -> Style {
 
     match config.mode {
         LayoutMode::Grid => {
+            // Grid uses Start/End (not FlexStart/FlexEnd)
+            let justify_content = match config.primary_axis_align {
+                PrimaryAxisAlign::Start => Some(JustifyContent::Start),
+                PrimaryAxisAlign::Center => Some(JustifyContent::Center),
+                PrimaryAxisAlign::End => Some(JustifyContent::End),
+                PrimaryAxisAlign::SpaceBetween => Some(JustifyContent::SpaceBetween),
+            };
+            let align_items = match config.counter_axis_align {
+                CounterAxisAlign::Start => Some(AlignItems::Start),
+                CounterAxisAlign::Center => Some(AlignItems::Center),
+                CounterAxisAlign::End => Some(AlignItems::End),
+                CounterAxisAlign::Stretch => Some(AlignItems::Stretch),
+                CounterAxisAlign::Baseline => Some(AlignItems::Baseline),
+            };
+
             let col_count = infer_grid_columns(node);
             let track: NonRepeatedTrackSizingFunction =
                 minmax(MinTrackSizingFunction::Auto, fr(1.0));
@@ -354,7 +354,11 @@ fn build_container_style(node: &Node, config: &LayoutConfig) -> Style {
             Style {
                 display: Display::Grid,
                 grid_template_columns: columns.into(),
-                grid_auto_rows: vec![minmax(MinTrackSizingFunction::Auto, MaxTrackSizingFunction::Auto)].into(),
+                grid_auto_rows: vec![minmax(
+                    MinTrackSizingFunction::Auto,
+                    MaxTrackSizingFunction::Auto,
+                )]
+                .into(),
                 justify_content,
                 align_items,
                 padding,
@@ -364,6 +368,21 @@ fn build_container_style(node: &Node, config: &LayoutConfig) -> Style {
             }
         }
         LayoutMode::Flex => {
+            // Flex uses FlexStart/FlexEnd
+            let justify_content = match config.primary_axis_align {
+                PrimaryAxisAlign::Start => Some(JustifyContent::FlexStart),
+                PrimaryAxisAlign::Center => Some(JustifyContent::Center),
+                PrimaryAxisAlign::End => Some(JustifyContent::FlexEnd),
+                PrimaryAxisAlign::SpaceBetween => Some(JustifyContent::SpaceBetween),
+            };
+            let align_items = match config.counter_axis_align {
+                CounterAxisAlign::Start => Some(AlignItems::FlexStart),
+                CounterAxisAlign::Center => Some(AlignItems::Center),
+                CounterAxisAlign::End => Some(AlignItems::FlexEnd),
+                CounterAxisAlign::Stretch => Some(AlignItems::Stretch),
+                CounterAxisAlign::Baseline => Some(AlignItems::Baseline),
+            };
+
             let flex_direction = match config.direction {
                 LayoutDirection::Horizontal => FlexDirection::Row,
                 LayoutDirection::Vertical => FlexDirection::Column,
@@ -372,13 +391,18 @@ fn build_container_style(node: &Node, config: &LayoutConfig) -> Style {
                 LayoutWrap::NoWrap => FlexWrap::NoWrap,
                 LayoutWrap::Wrap => FlexWrap::Wrap,
             };
-            let row_gap = if config.counter_axis_spacing > 0.0 {
-                config.counter_axis_spacing
-            } else {
-                config.item_spacing
+            // For flex: item_spacing is the primary axis gap, counter_axis_spacing
+            // is the cross axis gap. Taffy uses width=column gap, height=row gap.
+            let (col_gap, row_gap) = match config.direction {
+                LayoutDirection::Horizontal => {
+                    (config.item_spacing, config.counter_axis_spacing)
+                }
+                LayoutDirection::Vertical => {
+                    (config.counter_axis_spacing, config.item_spacing)
+                }
             };
             let gap = Size {
-                width: LengthPercentage::Length(config.item_spacing),
+                width: LengthPercentage::Length(col_gap),
                 height: LengthPercentage::Length(row_gap),
             };
 
@@ -1610,12 +1634,12 @@ mod tests {
             _ => panic!("expected frame"),
         };
 
-        // Third child should be in second row with row gap of 30px (not default item_spacing of 10px)
-        // Exact position depends on Taffy's align-content default (Stretch distributes extra space),
-        // but the gap between rows should be >= 30px.
+        // Third child should be in second row with row gap of 30px
+        // Taffy's align-content default (Stretch) distributes extra space, so the
+        // actual gap may be larger, but it must be at least counter_axis_spacing.
         let r0 = &layout_map[&children[0]];
         let r2 = &layout_map[&children[2]];
-        let row_gap = r2.y - (r0.y + 40.0); // second row y - (first row y + first row height)
+        let row_gap = r2.y - (r0.y + 40.0);
         assert!(
             row_gap >= 29.0,
             "Row gap should be at least 30px (counter_axis_spacing), got {}",
