@@ -168,6 +168,13 @@ enum Command {
         #[arg(long)]
         line_height: Option<String>,
     },
+    /// Delete a node and its descendants
+    Delete {
+        /// Document file path
+        file: String,
+        /// Node stable_id to delete
+        stable_id: String,
+    },
     /// Add a node to a document
     Add {
         /// Node kind: frame, group, text, vector, image
@@ -391,6 +398,7 @@ fn main() {
             text_align.as_deref(),
             line_height.as_deref(),
         ),
+        Command::Delete { file, stable_id } => mutate::cmd_delete(&file, &stable_id),
         Command::Add {
             kind,
             file,

@@ -1,7 +1,7 @@
 use crate::output::*;
 use ode_format::wire::{
     ContainerPropsWire, DocumentWire, FrameDataWire, GroupDataWire, ImageDataWire, NodeKindWire,
-    NodeWire, TextDataWire,
+    NodeWire, TextDataWire, ViewKindWire,
 };
 use ode_format::{BlendMode, Color, Fill, LayoutDirection, LayoutPadding, Paint, SizingMode, Stroke, StyleValue, VisualProps};
 use ode_format::node::{FillRule, Transform, VectorData};
@@ -1045,6 +1045,136 @@ pub fn cmd_set(
         status: "ok",
         stable_id: stable_id.to_string(),
         modified,
+    });
+    EXIT_OK
+}
+
+// ─── ode delete ───
+
+pub fn cmd_delete(file: &str, stable_id: &str) -> i32 {
+    let (file_path, mut wire) = match load_wire(file) {
+        Ok(v) => v,
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
+    };
+
+    // Step 1: verify node exists
+    if wire.find_node(stable_id).is_none() {
+        print_json(&ErrorResponse::new(
+            "NOT_FOUND",
+            "validate",
+            &format!("node '{stable_id}' not found"),
+        ));
+        return EXIT_INPUT;
+    }
+
+    // Step 2: collect all descendant stable_ids
+    let descendants = wire.collect_descendants(stable_id);
+
+    // Step 3: build to_delete list
+    let mut to_delete: Vec<String> = Vec::with_capacity(1 + descendants.len());
+    to_delete.push(stable_id.to_string());
+    to_delete.extend(descendants);
+
+    let to_delete_set: std::collections::HashSet<&str> =
+        to_delete.iter().map(|s| s.as_str()).collect();
+
+    let mut warnings: Vec<Warning> = Vec::new();
+
+    // Step 4: remove stable_id from parent's children
+    wire.remove_child_from_parent(stable_id);
+
+    // Step 5: remove from canvas if it's a root
+    wire.canvas.retain(|c| c != stable_id);
+
+    // Step 6: clean up view references
+    wire.views.retain_mut(|view| {
+        match &mut view.kind {
+            ViewKindWire::Print { pages } => {
+                let before = pages.len();
+                pages.retain(|p| !to_delete_set.contains(p.as_str()));
+                if pages.len() < before {
+                    warnings.push(Warning {
+                        path: format!("views/{}", view.id.0),
+                        code: "VIEW_PAGES_PRUNED".to_string(),
+                        message: format!(
+                            "Print view '{}' had {} page(s) removed because their nodes were deleted",
+                            view.name,
+                            before - pages.len()
+                        ),
+                    });
+                }
+                true // keep the view even if empty
+            }
+            ViewKindWire::Web { root } => {
+                if to_delete_set.contains(root.as_str()) {
+                    warnings.push(Warning {
+                        path: format!("views/{}", view.id.0),
+                        code: "VIEW_ROOT_DELETED".to_string(),
+                        message: format!(
+                            "Web view '{}' removed because its root node was deleted",
+                            view.name
+                        ),
+                    });
+                    false // remove the entire view
+                } else {
+                    true
+                }
+            }
+            ViewKindWire::Presentation { slides } => {
+                let before = slides.len();
+                slides.retain(|s| !to_delete_set.contains(s.as_str()));
+                if slides.len() < before {
+                    warnings.push(Warning {
+                        path: format!("views/{}", view.id.0),
+                        code: "VIEW_SLIDES_PRUNED".to_string(),
+                        message: format!(
+                            "Presentation view '{}' had {} slide(s) removed because their nodes were deleted",
+                            view.name,
+                            before - slides.len()
+                        ),
+                    });
+                }
+                true
+            }
+            ViewKindWire::Export { .. } => true, // no node references to clean up
+        }
+    });
+
+    // Step 7: check for dangling instance references
+    for node in &wire.nodes {
+        if to_delete_set.contains(node.stable_id.as_str()) {
+            continue; // will be removed anyway
+        }
+        if let NodeKindWire::Instance(inst) = &node.kind {
+            if to_delete_set.contains(inst.source_component.as_str()) {
+                warnings.push(Warning {
+                    path: format!("nodes/{}", node.stable_id),
+                    code: "DANGLING_INSTANCE".to_string(),
+                    message: format!(
+                        "Instance node '{}' references deleted component '{}'",
+                        node.stable_id, inst.source_component
+                    ),
+                });
+            }
+        }
+    }
+
+    // Step 8: remove all nodes in to_delete
+    wire.nodes.retain(|n| !to_delete_set.contains(n.stable_id.as_str()));
+
+    // Step 9: save and print
+    if let Err((code, err)) = save_wire(&file_path, &wire) {
+        print_json(&err);
+        return code;
+    }
+
+    print_json(&DeleteResponse {
+        status: "ok",
+        deleted: to_delete,
+        warnings,
     });
     EXIT_OK
 }
