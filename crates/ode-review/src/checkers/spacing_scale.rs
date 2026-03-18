@@ -81,7 +81,7 @@ mod tests {
     use crate::rule::AppliesTo;
     use crate::traverse::build_parent_map;
     use ode_format::node::{
-        LayoutConfig, LayoutDirection, LayoutPadding, LayoutWrap, Node, NodeKind,
+        LayoutConfig, LayoutDirection, LayoutMode, LayoutPadding, LayoutWrap, Node, NodeKind,
         PrimaryAxisAlign, CounterAxisAlign,
     };
     use ode_format::Document;
@@ -90,11 +90,13 @@ mod tests {
         let mut frame = Node::new_frame(name, 200.0, 200.0);
         if let NodeKind::Frame(ref mut data) = frame.kind {
             data.container.layout = Some(LayoutConfig {
+                mode: LayoutMode::Flex,
                 direction: LayoutDirection::default(),
                 primary_axis_align: PrimaryAxisAlign::default(),
                 counter_axis_align: CounterAxisAlign::default(),
                 padding: LayoutPadding::default(),
                 item_spacing: spacing,
+                counter_axis_spacing: 0.0,
                 wrap: LayoutWrap::default(),
             });
         }

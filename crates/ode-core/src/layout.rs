@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ode_format::document::Document;
 use ode_format::node::{
     ConstraintAxis, Constraints, CounterAxisAlign, FrameData, LayoutConfig, LayoutDirection,
-    LayoutWrap, Node, NodeId, NodeKind, PrimaryAxisAlign, SizingMode,
+    LayoutMode, LayoutWrap, Node, NodeId, NodeKind, PrimaryAxisAlign, SizingMode,
 };
 use taffy::prelude::*;
 
@@ -282,33 +282,23 @@ fn get_frame_data(node: &Node) -> Option<&FrameData> {
     }
 }
 
+/// Infer the number of grid columns from children count.
+/// Uses sqrt(child_count) rounded up for a balanced grid, minimum 1.
+fn infer_grid_columns(node: &Node) -> u16 {
+    let frame = match get_frame_data(node) {
+        Some(f) => f,
+        None => return 1,
+    };
+    let count = frame.container.children.len();
+    if count == 0 {
+        return 1;
+    }
+    let n = (count as f32).sqrt().ceil() as u16;
+    n.max(1)
+}
+
 /// Build taffy Style for a container node.
 fn build_container_style(node: &Node, config: &LayoutConfig) -> Style {
-    let flex_direction = match config.direction {
-        LayoutDirection::Horizontal => FlexDirection::Row,
-        LayoutDirection::Vertical => FlexDirection::Column,
-    };
-
-    let justify_content = match config.primary_axis_align {
-        PrimaryAxisAlign::Start => Some(JustifyContent::FlexStart),
-        PrimaryAxisAlign::Center => Some(JustifyContent::Center),
-        PrimaryAxisAlign::End => Some(JustifyContent::FlexEnd),
-        PrimaryAxisAlign::SpaceBetween => Some(JustifyContent::SpaceBetween),
-    };
-
-    let align_items = match config.counter_axis_align {
-        CounterAxisAlign::Start => Some(AlignItems::FlexStart),
-        CounterAxisAlign::Center => Some(AlignItems::Center),
-        CounterAxisAlign::End => Some(AlignItems::FlexEnd),
-        CounterAxisAlign::Stretch => Some(AlignItems::Stretch),
-        CounterAxisAlign::Baseline => Some(AlignItems::Baseline),
-    };
-
-    let flex_wrap = match config.wrap {
-        LayoutWrap::NoWrap => FlexWrap::NoWrap,
-        LayoutWrap::Wrap => FlexWrap::Wrap,
-    };
-
     let padding = Rect {
         top: LengthPercentage::Length(config.padding.top),
         right: LengthPercentage::Length(config.padding.right),
@@ -316,17 +306,12 @@ fn build_container_style(node: &Node, config: &LayoutConfig) -> Style {
         left: LengthPercentage::Length(config.padding.left),
     };
 
-    let gap = Size {
-        width: LengthPercentage::Length(config.item_spacing),
-        height: LengthPercentage::Length(config.item_spacing),
-    };
-
     // Determine container size dimensions
     let (width, height) = if let Some(frame_data) = get_frame_data(node) {
         let w = match frame_data.width_sizing {
             SizingMode::Fixed => Dimension::Length(frame_data.width),
             SizingMode::Hug => Dimension::Auto,
-            SizingMode::Fill => Dimension::Auto, // Fill at container level = auto
+            SizingMode::Fill => Dimension::Auto,
         };
         let h = match frame_data.height_sizing {
             SizingMode::Fixed => Dimension::Length(frame_data.height),
@@ -338,16 +323,101 @@ fn build_container_style(node: &Node, config: &LayoutConfig) -> Style {
         (Dimension::Auto, Dimension::Auto)
     };
 
-    Style {
-        display: Display::Flex,
-        flex_direction,
-        justify_content,
-        align_items,
-        flex_wrap,
-        padding,
-        gap,
-        size: Size { width, height },
-        ..Style::DEFAULT
+    match config.mode {
+        LayoutMode::Grid => {
+            // Grid uses Start/End (not FlexStart/FlexEnd)
+            let justify_content = match config.primary_axis_align {
+                PrimaryAxisAlign::Start => Some(JustifyContent::Start),
+                PrimaryAxisAlign::Center => Some(JustifyContent::Center),
+                PrimaryAxisAlign::End => Some(JustifyContent::End),
+                PrimaryAxisAlign::SpaceBetween => Some(JustifyContent::SpaceBetween),
+            };
+            let align_items = match config.counter_axis_align {
+                CounterAxisAlign::Start => Some(AlignItems::Start),
+                CounterAxisAlign::Center => Some(AlignItems::Center),
+                CounterAxisAlign::End => Some(AlignItems::End),
+                CounterAxisAlign::Stretch => Some(AlignItems::Stretch),
+                CounterAxisAlign::Baseline => Some(AlignItems::Baseline),
+            };
+
+            let col_count = infer_grid_columns(node);
+            let track: NonRepeatedTrackSizingFunction =
+                minmax(MinTrackSizingFunction::Auto, fr(1.0));
+            let columns: Vec<TrackSizingFunction> =
+                (0..col_count).map(|_| track.into()).collect();
+
+            let gap = Size {
+                width: LengthPercentage::Length(config.item_spacing),
+                height: LengthPercentage::Length(config.counter_axis_spacing),
+            };
+
+            Style {
+                display: Display::Grid,
+                grid_template_columns: columns.into(),
+                grid_auto_rows: vec![minmax(
+                    MinTrackSizingFunction::Auto,
+                    MaxTrackSizingFunction::Auto,
+                )]
+                .into(),
+                justify_content,
+                align_items,
+                padding,
+                gap,
+                size: Size { width, height },
+                ..Style::DEFAULT
+            }
+        }
+        LayoutMode::Flex => {
+            // Flex uses FlexStart/FlexEnd
+            let justify_content = match config.primary_axis_align {
+                PrimaryAxisAlign::Start => Some(JustifyContent::FlexStart),
+                PrimaryAxisAlign::Center => Some(JustifyContent::Center),
+                PrimaryAxisAlign::End => Some(JustifyContent::FlexEnd),
+                PrimaryAxisAlign::SpaceBetween => Some(JustifyContent::SpaceBetween),
+            };
+            let align_items = match config.counter_axis_align {
+                CounterAxisAlign::Start => Some(AlignItems::FlexStart),
+                CounterAxisAlign::Center => Some(AlignItems::Center),
+                CounterAxisAlign::End => Some(AlignItems::FlexEnd),
+                CounterAxisAlign::Stretch => Some(AlignItems::Stretch),
+                CounterAxisAlign::Baseline => Some(AlignItems::Baseline),
+            };
+
+            let flex_direction = match config.direction {
+                LayoutDirection::Horizontal => FlexDirection::Row,
+                LayoutDirection::Vertical => FlexDirection::Column,
+            };
+            let flex_wrap = match config.wrap {
+                LayoutWrap::NoWrap => FlexWrap::NoWrap,
+                LayoutWrap::Wrap => FlexWrap::Wrap,
+            };
+            // For flex: item_spacing is the primary axis gap, counter_axis_spacing
+            // is the cross axis gap. Taffy uses width=column gap, height=row gap.
+            let (col_gap, row_gap) = match config.direction {
+                LayoutDirection::Horizontal => {
+                    (config.item_spacing, config.counter_axis_spacing)
+                }
+                LayoutDirection::Vertical => {
+                    (config.counter_axis_spacing, config.item_spacing)
+                }
+            };
+            let gap = Size {
+                width: LengthPercentage::Length(col_gap),
+                height: LengthPercentage::Length(row_gap),
+            };
+
+            Style {
+                display: Display::Flex,
+                flex_direction,
+                justify_content,
+                align_items,
+                flex_wrap,
+                padding,
+                gap,
+                size: Size { width, height },
+                ..Style::DEFAULT
+            }
+        }
     }
 }
 
@@ -624,8 +694,8 @@ mod tests {
     use super::*;
     use ode_format::document::Document;
     use ode_format::node::{
-        ConstraintAxis, Constraints, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding,
-        LayoutSizing, LayoutWrap, Node, NodeKind, PrimaryAxisAlign, SizingMode,
+        ConstraintAxis, Constraints, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutMode,
+        LayoutPadding, LayoutSizing, LayoutWrap, Node, NodeKind, PrimaryAxisAlign, SizingMode,
     };
 
     /// Helper: create a frame with auto layout enabled.
@@ -649,11 +719,13 @@ mod tests {
 
     fn default_config() -> LayoutConfig {
         LayoutConfig {
+            mode: LayoutMode::Flex,
             direction: LayoutDirection::Horizontal,
             primary_axis_align: PrimaryAxisAlign::Start,
             counter_axis_align: CounterAxisAlign::Start,
             padding: LayoutPadding::default(),
             item_spacing: 0.0,
+            counter_axis_spacing: 0.0,
             wrap: LayoutWrap::NoWrap,
         }
     }
@@ -701,6 +773,7 @@ mod tests {
         let mut doc = Document::new("Test");
 
         let config = LayoutConfig {
+            mode: LayoutMode::Flex,
             direction: LayoutDirection::Vertical,
             primary_axis_align: PrimaryAxisAlign::Start,
             counter_axis_align: CounterAxisAlign::Start,
@@ -711,6 +784,7 @@ mod tests {
                 left: 10.0,
             },
             item_spacing: 8.0,
+            counter_axis_spacing: 0.0,
             wrap: LayoutWrap::NoWrap,
         };
         let mut parent = make_auto_layout_frame("Parent", 200.0, 200.0, config);
@@ -911,11 +985,13 @@ mod tests {
         let mut doc = Document::new("Test");
 
         let config = LayoutConfig {
+            mode: LayoutMode::Flex,
             direction: LayoutDirection::Horizontal,
             primary_axis_align: PrimaryAxisAlign::Center,
             counter_axis_align: CounterAxisAlign::Center,
             padding: LayoutPadding::default(),
             item_spacing: 0.0,
+            counter_axis_spacing: 0.0,
             wrap: LayoutWrap::NoWrap,
         };
         let mut parent = make_auto_layout_frame("Parent", 200.0, 100.0, config);
@@ -943,11 +1019,13 @@ mod tests {
         let mut doc = Document::new("Test");
 
         let config = LayoutConfig {
+            mode: LayoutMode::Flex,
             direction: LayoutDirection::Horizontal,
             primary_axis_align: PrimaryAxisAlign::SpaceBetween,
             counter_axis_align: CounterAxisAlign::Start,
             padding: LayoutPadding::default(),
             item_spacing: 0.0,
+            counter_axis_spacing: 0.0,
             wrap: LayoutWrap::NoWrap,
         };
         let mut parent = make_auto_layout_frame("Parent", 200.0, 100.0, config);
@@ -1440,5 +1518,132 @@ mod tests {
         let layout = compute_layout(&doc, &index, &resize_map);
 
         assert!(layout.get(&c_id).is_none(), "None constraints = no layout entry");
+    }
+
+    #[test]
+    fn grid_layout_positions_children_in_grid() {
+        let mut doc = Document::new("Grid");
+        let mut frame = Node::new_frame("GridContainer", 320.0, 200.0);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.width_sizing = SizingMode::Fixed;
+            data.height_sizing = SizingMode::Fixed;
+            data.container.layout = Some(LayoutConfig {
+                mode: LayoutMode::Grid,
+                direction: LayoutDirection::Horizontal,
+                primary_axis_align: PrimaryAxisAlign::Start,
+                counter_axis_align: CounterAxisAlign::Start,
+                padding: LayoutPadding::default(),
+                item_spacing: 10.0,
+                counter_axis_spacing: 20.0,
+                wrap: LayoutWrap::Wrap,
+            });
+
+            let child_ids: Vec<NodeId> = (0..6)
+                .map(|i| {
+                    let mut child = Node::new_frame(&format!("Cell{i}"), 100.0, 50.0);
+                    if let NodeKind::Frame(ref mut cd) = child.kind {
+                        cd.width_sizing = SizingMode::Fixed;
+                        cd.height_sizing = SizingMode::Fixed;
+                    }
+                    doc.nodes.insert(child)
+                })
+                .collect();
+            data.container.children = child_ids;
+        }
+        let fid = doc.nodes.insert(frame);
+        doc.canvas.push(fid);
+
+        let stable_idx: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(id, n)| (n.stable_id.as_str(), id))
+            .collect();
+        let layout_map = compute_layout(&doc, &stable_idx, &ResizeMap::new());
+
+        let frame_children = match &doc.nodes[fid].kind {
+            NodeKind::Frame(d) => &d.container.children,
+            _ => panic!("expected frame"),
+        };
+
+        // All 6 children should have layout rects
+        for &cid in frame_children {
+            assert!(
+                layout_map.contains_key(&cid),
+                "Child should have a layout rect"
+            );
+        }
+
+        // First child at (0, 0)
+        let r0 = &layout_map[&frame_children[0]];
+        assert!(r0.x.abs() < 1.0, "First cell x ~0, got {}", r0.x);
+        assert!(r0.y.abs() < 1.0, "First cell y ~0, got {}", r0.y);
+
+        // Second child in second column (x > 50)
+        let r1 = &layout_map[&frame_children[1]];
+        assert!(r1.x > 50.0, "Second cell in second column, x={}", r1.x);
+        assert!(r1.y.abs() < 1.0, "Second cell in first row, y={}", r1.y);
+
+        // Fourth child in second row (y > 30)
+        let r3 = &layout_map[&frame_children[3]];
+        assert!(r3.x.abs() < 1.0, "Fourth cell in first column, x={}", r3.x);
+        assert!(r3.y > 30.0, "Fourth cell in second row, y={}", r3.y);
+    }
+
+    #[test]
+    fn flex_wrap_uses_counter_axis_spacing_for_row_gap() {
+        let mut doc = Document::new("FlexWrap");
+        let mut frame = Node::new_frame("Container", 220.0, 200.0);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.width_sizing = SizingMode::Fixed;
+            data.height_sizing = SizingMode::Fixed;
+            data.container.layout = Some(LayoutConfig {
+                mode: LayoutMode::Flex,
+                direction: LayoutDirection::Horizontal,
+                primary_axis_align: PrimaryAxisAlign::Start,
+                counter_axis_align: CounterAxisAlign::Start,
+                padding: LayoutPadding::default(),
+                item_spacing: 10.0,
+                counter_axis_spacing: 30.0,
+                wrap: LayoutWrap::Wrap,
+            });
+
+            let child_ids: Vec<NodeId> = (0..4)
+                .map(|i| {
+                    let mut child = Node::new_frame(&format!("C{i}"), 100.0, 40.0);
+                    if let NodeKind::Frame(ref mut cd) = child.kind {
+                        cd.width_sizing = SizingMode::Fixed;
+                        cd.height_sizing = SizingMode::Fixed;
+                    }
+                    doc.nodes.insert(child)
+                })
+                .collect();
+            data.container.children = child_ids;
+        }
+        let fid = doc.nodes.insert(frame);
+        doc.canvas.push(fid);
+
+        let stable_idx: HashMap<&str, NodeId> = doc
+            .nodes
+            .iter()
+            .map(|(id, n)| (n.stable_id.as_str(), id))
+            .collect();
+        let layout_map = compute_layout(&doc, &stable_idx, &ResizeMap::new());
+
+        let children = match &doc.nodes[fid].kind {
+            NodeKind::Frame(d) => &d.container.children,
+            _ => panic!("expected frame"),
+        };
+
+        // Third child should be in second row with row gap of 30px
+        // Taffy's align-content default (Stretch) distributes extra space, so the
+        // actual gap may be larger, but it must be at least counter_axis_spacing.
+        let r0 = &layout_map[&children[0]];
+        let r2 = &layout_map[&children[2]];
+        let row_gap = r2.y - (r0.y + 40.0);
+        assert!(
+            row_gap >= 29.0,
+            "Row gap should be at least 30px (counter_axis_spacing), got {}",
+            row_gap
+        );
     }
 }

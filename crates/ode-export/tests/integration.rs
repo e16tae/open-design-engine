@@ -1,5 +1,5 @@
 use ode_core::{Renderer, Scene};
-use ode_export::{PdfExporter, PngExporter};
+use ode_export::{PdfExporter, PngExporter, SvgExporter};
 use ode_format::color::Color;
 use ode_format::document::Document;
 use ode_format::node::{Node, NodeKind, PathSegment, VectorPath};
@@ -199,4 +199,148 @@ fn document_to_pdf_red_frame() {
     let file_bytes = std::fs::read(&path).unwrap();
     assert_eq!(pdf_bytes, file_bytes);
     std::fs::remove_file(&path).ok();
+}
+
+/// End-to-end: Build document with mask → convert to scene → render PNG/SVG/PDF
+#[test]
+fn mask_e2e_renders_without_panic() {
+    // Build a document with a mask node + masked sibling
+    let mut doc = Document::new("MaskE2E");
+
+    let mut mask = Node::new_vector(
+        "Mask",
+        VectorPath {
+            segments: vec![
+                PathSegment::MoveTo { x: 0.0, y: 0.0 },
+                PathSegment::LineTo { x: 80.0, y: 0.0 },
+                PathSegment::LineTo { x: 80.0, y: 80.0 },
+                PathSegment::LineTo { x: 0.0, y: 80.0 },
+                PathSegment::Close,
+            ],
+            closed: true,
+        },
+    );
+    mask.is_mask = true;
+    let mask_id = doc.nodes.insert(mask);
+
+    let mut rect = Node::new_vector(
+        "Rect",
+        VectorPath {
+            segments: vec![
+                PathSegment::MoveTo { x: 0.0, y: 0.0 },
+                PathSegment::LineTo { x: 200.0, y: 0.0 },
+                PathSegment::LineTo { x: 200.0, y: 200.0 },
+                PathSegment::LineTo { x: 0.0, y: 200.0 },
+                PathSegment::Close,
+            ],
+            closed: true,
+        },
+    );
+    if let NodeKind::Vector(ref mut data) = rect.kind {
+        data.visual.fills.push(Fill {
+            paint: Paint::Solid {
+                color: StyleValue::Raw(Color::Srgb {
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                }),
+            },
+            opacity: StyleValue::Raw(1.0),
+            blend_mode: BlendMode::Normal,
+            visible: true,
+        });
+    }
+    let rect_id = doc.nodes.insert(rect);
+
+    let mut frame = Node::new_frame("Root", 200.0, 200.0);
+    if let NodeKind::Frame(ref mut data) = frame.kind {
+        data.container.children = vec![mask_id, rect_id];
+    }
+    let fid = doc.nodes.insert(frame);
+    doc.canvas.push(fid);
+
+    let font_db = ode_core::FontDatabase::new();
+    let scene = Scene::from_document(&doc, &font_db).unwrap();
+
+    // PNG render
+    let pixmap = Renderer::render(&scene).unwrap();
+    let png_bytes = PngExporter::export_bytes(&pixmap).unwrap();
+    assert!(png_bytes.len() > 100, "PNG should have content");
+
+    // SVG render — mask produces a clipPath element
+    let svg = SvgExporter::export_string(&scene).unwrap();
+    assert!(
+        svg.contains("clipPath"),
+        "SVG should contain a clipPath for the mask"
+    );
+
+    // PDF render
+    let pdf_bytes = PdfExporter::export_bytes(&scene).unwrap();
+    assert!(
+        pdf_bytes.starts_with(b"%PDF"),
+        "Should produce valid PDF"
+    );
+}
+
+#[test]
+fn grid_layout_e2e_renders() {
+    use ode_format::node::*;
+
+    let mut doc = Document::new("GridE2E");
+
+    let mut frame = Node::new_frame("Grid", 320.0, 200.0);
+    if let NodeKind::Frame(ref mut data) = frame.kind {
+        data.width_sizing = SizingMode::Fixed;
+        data.height_sizing = SizingMode::Fixed;
+        data.container.layout = Some(LayoutConfig {
+            mode: LayoutMode::Grid,
+            direction: LayoutDirection::Horizontal,
+            primary_axis_align: PrimaryAxisAlign::Start,
+            counter_axis_align: CounterAxisAlign::Start,
+            padding: LayoutPadding::default(),
+            item_spacing: 10.0,
+            counter_axis_spacing: 10.0,
+            wrap: LayoutWrap::Wrap,
+        });
+
+        let child_ids: Vec<NodeId> = (0..4)
+            .map(|i| {
+                let mut child = Node::new_frame(&format!("Cell{i}"), 100.0, 50.0);
+                if let NodeKind::Frame(ref mut cd) = child.kind {
+                    cd.width_sizing = SizingMode::Fixed;
+                    cd.height_sizing = SizingMode::Fixed;
+                    cd.visual.fills.push(Fill {
+                        paint: Paint::Solid {
+                            color: StyleValue::Raw(Color::Srgb {
+                                r: 1.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            }),
+                        },
+                        opacity: StyleValue::Raw(1.0),
+                        blend_mode: BlendMode::Normal,
+                        visible: true,
+                    });
+                }
+                doc.nodes.insert(child)
+            })
+            .collect();
+        data.container.children = child_ids;
+    }
+    let fid = doc.nodes.insert(frame);
+    doc.canvas.push(fid);
+
+    let font_db = ode_core::FontDatabase::new();
+    let scene = Scene::from_document(&doc, &font_db).unwrap();
+
+    // PNG should render
+    let pixmap = Renderer::render(&scene).unwrap();
+    let png_bytes = PngExporter::export_bytes(&pixmap).unwrap();
+    assert!(png_bytes.len() > 100, "PNG should have content");
+
+    // SVG should render
+    let svg = SvgExporter::export_string(&scene).unwrap();
+    assert!(!svg.is_empty(), "SVG should have content");
 }
