@@ -85,3 +85,43 @@ fn import_mask_basic_sets_is_mask() {
         .expect("MaskedRect should exist");
     assert!(!sibling.is_mask, "MaskedRect should not be a mask");
 }
+
+#[test]
+fn import_grid_layout_no_warning() {
+    let json = fs::read_to_string("tests/fixtures/grid_layout.json").unwrap();
+    let file: FigmaFileResponse = serde_json::from_str(&json).unwrap();
+    let result = FigmaConverter::convert(file, None, HashMap::new()).unwrap();
+
+    // No grid warnings
+    let grid_warnings: Vec<_> = result
+        .warnings
+        .iter()
+        .filter(|w| w.message.to_lowercase().contains("grid"))
+        .collect();
+    assert!(
+        grid_warnings.is_empty(),
+        "Grid should not produce warnings: {:?}",
+        grid_warnings
+    );
+
+    // GridFrame should have layout config with Grid mode
+    let grid_frame = result
+        .document
+        .nodes
+        .iter()
+        .find(|(_, n)| n.name == "GridFrame")
+        .map(|(_, n)| n)
+        .expect("GridFrame should exist");
+    if let NodeKind::Frame(ref data) = grid_frame.kind {
+        let layout = data
+            .container
+            .layout
+            .as_ref()
+            .expect("Should have layout config");
+        assert_eq!(layout.mode, ode_format::node::LayoutMode::Grid);
+        assert!((layout.item_spacing - 10.0).abs() < f32::EPSILON);
+        assert!((layout.counter_axis_spacing - 10.0).abs() < f32::EPSILON);
+    } else {
+        panic!("GridFrame should be a Frame");
+    }
+}

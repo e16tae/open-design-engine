@@ -282,3 +282,65 @@ fn mask_e2e_renders_without_panic() {
         "Should produce valid PDF"
     );
 }
+
+#[test]
+fn grid_layout_e2e_renders() {
+    use ode_format::node::*;
+
+    let mut doc = Document::new("GridE2E");
+
+    let mut frame = Node::new_frame("Grid", 320.0, 200.0);
+    if let NodeKind::Frame(ref mut data) = frame.kind {
+        data.width_sizing = SizingMode::Fixed;
+        data.height_sizing = SizingMode::Fixed;
+        data.container.layout = Some(LayoutConfig {
+            mode: LayoutMode::Grid,
+            direction: LayoutDirection::Horizontal,
+            primary_axis_align: PrimaryAxisAlign::Start,
+            counter_axis_align: CounterAxisAlign::Start,
+            padding: LayoutPadding::default(),
+            item_spacing: 10.0,
+            counter_axis_spacing: 10.0,
+            wrap: LayoutWrap::Wrap,
+        });
+
+        let child_ids: Vec<NodeId> = (0..4)
+            .map(|i| {
+                let mut child = Node::new_frame(&format!("Cell{i}"), 100.0, 50.0);
+                if let NodeKind::Frame(ref mut cd) = child.kind {
+                    cd.width_sizing = SizingMode::Fixed;
+                    cd.height_sizing = SizingMode::Fixed;
+                    cd.visual.fills.push(Fill {
+                        paint: Paint::Solid {
+                            color: StyleValue::Raw(Color::Srgb {
+                                r: 1.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            }),
+                        },
+                        opacity: StyleValue::Raw(1.0),
+                        blend_mode: BlendMode::Normal,
+                        visible: true,
+                    });
+                }
+                doc.nodes.insert(child)
+            })
+            .collect();
+        data.container.children = child_ids;
+    }
+    let fid = doc.nodes.insert(frame);
+    doc.canvas.push(fid);
+
+    let font_db = ode_core::FontDatabase::new();
+    let scene = Scene::from_document(&doc, &font_db).unwrap();
+
+    // PNG should render
+    let pixmap = Renderer::render(&scene).unwrap();
+    let png_bytes = PngExporter::export_bytes(&pixmap).unwrap();
+    assert!(png_bytes.len() > 100, "PNG should have content");
+
+    // SVG should render
+    let svg = SvgExporter::export_string(&scene).unwrap();
+    assert!(!svg.is_empty(), "SVG should have content");
+}
