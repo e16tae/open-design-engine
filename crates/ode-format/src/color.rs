@@ -97,6 +97,12 @@ impl Color {
                 let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
                 (r, g, b, a)
             }
+            3 => {
+                let r = u8::from_str_radix(&hex[0..1], 16).ok()?;
+                let g = u8::from_str_radix(&hex[1..2], 16).ok()?;
+                let b = u8::from_str_radix(&hex[2..3], 16).ok()?;
+                (r * 17, g * 17, b * 17, 255u8) // 0xA → 0xAA
+            }
             _ => return None,
         };
         Some(Self::Srgb {
@@ -311,6 +317,31 @@ mod tests {
                 "Failed for {:?}",
                 color
             );
+        }
+    }
+
+    #[test]
+    fn from_hex_3_char() {
+        let c = Color::from_hex("#F00").unwrap();
+        if let Color::Srgb { r, g, b, a } = c {
+            assert!((r - 1.0).abs() < 0.01);
+            assert!((g - 0.0).abs() < 0.01);
+            assert!((b - 0.0).abs() < 0.01);
+            assert!((a - 1.0).abs() < 0.01);
+        } else {
+            panic!("Expected Srgb");
+        }
+    }
+
+    #[test]
+    fn from_hex_3_char_mixed() {
+        let c = Color::from_hex("#ABC").unwrap();
+        if let Color::Srgb { r, g, b, .. } = c {
+            assert!((r - 0xAA as f32 / 255.0).abs() < 0.01);
+            assert!((g - 0xBB as f32 / 255.0).abs() < 0.01);
+            assert!((b - 0xCC as f32 / 255.0).abs() < 0.01);
+        } else {
+            panic!("Expected Srgb");
         }
     }
 
