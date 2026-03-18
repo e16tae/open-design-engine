@@ -113,6 +113,61 @@ enum Command {
         #[arg(long)]
         layer: Option<String>,
     },
+    /// Set properties on an existing node
+    Set {
+        /// Document file path
+        file: String,
+        /// Node stable_id
+        stable_id: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        visible: Option<bool>,
+        #[arg(long)]
+        opacity: Option<f32>,
+        #[arg(long)]
+        blend_mode: Option<String>,
+        #[arg(long)]
+        x: Option<f32>,
+        #[arg(long)]
+        y: Option<f32>,
+        #[arg(long)]
+        width: Option<f32>,
+        #[arg(long)]
+        height: Option<f32>,
+        #[arg(long)]
+        fill: Option<String>,
+        #[arg(long)]
+        fill_opacity: Option<f32>,
+        #[arg(long)]
+        stroke: Option<String>,
+        #[arg(long)]
+        stroke_width: Option<f32>,
+        #[arg(long)]
+        stroke_position: Option<String>,
+        #[arg(long, value_name = "R or TL,TR,BR,BL")]
+        corner_radius: Option<String>,
+        #[arg(long)]
+        clips_content: Option<bool>,
+        #[arg(long)]
+        layout: Option<String>,
+        #[arg(long, value_name = "P or T,R,B,L")]
+        padding: Option<String>,
+        #[arg(long)]
+        gap: Option<f32>,
+        #[arg(long)]
+        content: Option<String>,
+        #[arg(long)]
+        font_size: Option<f32>,
+        #[arg(long)]
+        font_family: Option<String>,
+        #[arg(long)]
+        font_weight: Option<u16>,
+        #[arg(long)]
+        text_align: Option<String>,
+        #[arg(long)]
+        line_height: Option<String>,
+    },
     /// Add a node to a document
     Add {
         /// Node kind: frame, group, text, vector, image
@@ -281,6 +336,61 @@ fn main() {
             context,
             layer,
         } => commands::cmd_review(&file, context.as_deref(), layer.as_deref()),
+        Command::Set {
+            file,
+            stable_id,
+            name,
+            visible,
+            opacity,
+            blend_mode,
+            x,
+            y,
+            width,
+            height,
+            fill,
+            fill_opacity,
+            stroke,
+            stroke_width,
+            stroke_position,
+            corner_radius,
+            clips_content,
+            layout,
+            padding,
+            gap,
+            content,
+            font_size,
+            font_family,
+            font_weight,
+            text_align,
+            line_height,
+        } => mutate::cmd_set(
+            &file,
+            &stable_id,
+            name.as_deref(),
+            visible,
+            opacity,
+            blend_mode.as_deref(),
+            x,
+            y,
+            width,
+            height,
+            fill.as_deref(),
+            fill_opacity,
+            stroke.as_deref(),
+            stroke_width,
+            stroke_position.as_deref(),
+            corner_radius.as_deref(),
+            clips_content,
+            layout.as_deref(),
+            padding.as_deref(),
+            gap,
+            content.as_deref(),
+            font_size,
+            font_family.as_deref(),
+            font_weight,
+            text_align.as_deref(),
+            line_height.as_deref(),
+        ),
         Command::Add {
             kind,
             file,

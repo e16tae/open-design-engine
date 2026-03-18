@@ -3,10 +3,10 @@ use ode_format::wire::{
     ContainerPropsWire, DocumentWire, FrameDataWire, GroupDataWire, ImageDataWire, NodeKindWire,
     NodeWire, TextDataWire,
 };
-use ode_format::{BlendMode, Color, Fill, Paint, SizingMode, StyleValue, VisualProps};
+use ode_format::{BlendMode, Color, Fill, LayoutDirection, LayoutPadding, Paint, SizingMode, Stroke, StyleValue, VisualProps};
 use ode_format::node::{FillRule, Transform, VectorData};
-use ode_format::style::ImageSource;
-use ode_format::typography::{TextSizingMode, TextStyle};
+use ode_format::style::{ImageSource, StrokeCap, StrokeJoin, StrokePosition};
+use ode_format::typography::{LineHeight, TextAlign, TextSizingMode, TextStyle};
 
 // ─── Shared load/save ───
 
@@ -404,6 +404,647 @@ pub fn cmd_add(
         name: node_name,
         kind: kind.to_string(),
         parent: parent_label,
+    });
+    EXIT_OK
+}
+
+// ─── Parse helpers for ode set ───
+
+fn parse_blend_mode(s: &str) -> Result<BlendMode, String> {
+    match s {
+        "normal" => Ok(BlendMode::Normal),
+        "multiply" => Ok(BlendMode::Multiply),
+        "screen" => Ok(BlendMode::Screen),
+        "overlay" => Ok(BlendMode::Overlay),
+        "darken" => Ok(BlendMode::Darken),
+        "lighten" => Ok(BlendMode::Lighten),
+        "color-dodge" => Ok(BlendMode::ColorDodge),
+        "color-burn" => Ok(BlendMode::ColorBurn),
+        "hard-light" => Ok(BlendMode::HardLight),
+        "soft-light" => Ok(BlendMode::SoftLight),
+        "difference" => Ok(BlendMode::Difference),
+        "exclusion" => Ok(BlendMode::Exclusion),
+        "hue" => Ok(BlendMode::Hue),
+        "saturation" => Ok(BlendMode::Saturation),
+        "color" => Ok(BlendMode::Color),
+        "luminosity" => Ok(BlendMode::Luminosity),
+        other => Err(format!("invalid blend mode: {other}")),
+    }
+}
+
+fn parse_stroke_position(s: &str) -> Result<StrokePosition, String> {
+    match s {
+        "center" => Ok(StrokePosition::Center),
+        "inside" => Ok(StrokePosition::Inside),
+        "outside" => Ok(StrokePosition::Outside),
+        other => Err(format!("invalid stroke position: {other}")),
+    }
+}
+
+fn parse_padding(s: &str) -> Result<LayoutPadding, String> {
+    let parts: Vec<f32> = s.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+    match parts.len() {
+        1 => Ok(LayoutPadding {
+            top: parts[0],
+            right: parts[0],
+            bottom: parts[0],
+            left: parts[0],
+        }),
+        4 => Ok(LayoutPadding {
+            top: parts[0],
+            right: parts[1],
+            bottom: parts[2],
+            left: parts[3],
+        }),
+        _ => Err(format!("invalid padding: expected 1 or 4 values, got '{s}'")),
+    }
+}
+
+fn parse_text_align(s: &str) -> Result<TextAlign, String> {
+    match s {
+        "left" => Ok(TextAlign::Left),
+        "center" => Ok(TextAlign::Center),
+        "right" => Ok(TextAlign::Right),
+        "justify" => Ok(TextAlign::Justify),
+        other => Err(format!("invalid text-align: {other}")),
+    }
+}
+
+fn parse_line_height(s: &str) -> Result<LineHeight, String> {
+    if s == "auto" {
+        return Ok(LineHeight::Auto);
+    }
+    match s.parse::<f32>() {
+        Ok(v) => Ok(LineHeight::Percent {
+            value: StyleValue::Raw(v),
+        }),
+        Err(_) => Err(format!("invalid line-height: {s}")),
+    }
+}
+
+fn make_default_stroke(color: Color) -> Stroke {
+    Stroke {
+        paint: Paint::Solid {
+            color: StyleValue::Raw(color),
+        },
+        width: StyleValue::Raw(1.0),
+        position: StrokePosition::Center,
+        cap: StrokeCap::Butt,
+        join: StrokeJoin::Miter,
+        miter_limit: 4.0,
+        dash: None,
+        opacity: StyleValue::Raw(1.0),
+        blend_mode: BlendMode::Normal,
+        visible: true,
+    }
+}
+
+// ─── ode set ───
+
+#[allow(clippy::too_many_arguments)]
+pub fn cmd_set(
+    file: &str,
+    stable_id: &str,
+    name: Option<&str>,
+    visible: Option<bool>,
+    opacity: Option<f32>,
+    blend_mode: Option<&str>,
+    x: Option<f32>,
+    y: Option<f32>,
+    width: Option<f32>,
+    height: Option<f32>,
+    fill: Option<&str>,
+    fill_opacity: Option<f32>,
+    stroke: Option<&str>,
+    stroke_width: Option<f32>,
+    stroke_position: Option<&str>,
+    corner_radius: Option<&str>,
+    clips_content: Option<bool>,
+    layout: Option<&str>,
+    padding: Option<&str>,
+    gap: Option<f32>,
+    content: Option<&str>,
+    font_size: Option<f32>,
+    font_family: Option<&str>,
+    font_weight: Option<u16>,
+    text_align: Option<&str>,
+    line_height: Option<&str>,
+) -> i32 {
+    // Check that at least one property is specified
+    let has_any = name.is_some()
+        || visible.is_some()
+        || opacity.is_some()
+        || blend_mode.is_some()
+        || x.is_some()
+        || y.is_some()
+        || width.is_some()
+        || height.is_some()
+        || fill.is_some()
+        || fill_opacity.is_some()
+        || stroke.is_some()
+        || stroke_width.is_some()
+        || stroke_position.is_some()
+        || corner_radius.is_some()
+        || clips_content.is_some()
+        || layout.is_some()
+        || padding.is_some()
+        || gap.is_some()
+        || content.is_some()
+        || font_size.is_some()
+        || font_family.is_some()
+        || font_weight.is_some()
+        || text_align.is_some()
+        || line_height.is_some();
+
+    if !has_any {
+        print_json(&ErrorResponse::new(
+            "NO_CHANGES",
+            "validate",
+            "no properties specified",
+        ));
+        return EXIT_INPUT;
+    }
+
+    let (file_path, mut wire) = match load_wire(file) {
+        Ok(v) => v,
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
+    };
+
+    // Find the node
+    let node = match wire.find_node_mut(stable_id) {
+        Some(n) => n,
+        None => {
+            print_json(&ErrorResponse::new(
+                "NOT_FOUND",
+                "validate",
+                &format!("node '{stable_id}' not found"),
+            ));
+            return EXIT_INPUT;
+        }
+    };
+
+    let mut modified: Vec<String> = Vec::new();
+
+    // ── Common properties (all nodes) ──
+
+    if let Some(n) = name {
+        node.name = n.to_string();
+        modified.push("name".to_string());
+    }
+
+    if let Some(v) = visible {
+        node.visible = v;
+        modified.push("visible".to_string());
+    }
+
+    if let Some(o) = opacity {
+        node.opacity = o;
+        modified.push("opacity".to_string());
+    }
+
+    if let Some(bm_str) = blend_mode {
+        match parse_blend_mode(bm_str) {
+            Ok(bm) => {
+                node.blend_mode = bm;
+                modified.push("blend-mode".to_string());
+            }
+            Err(msg) => {
+                print_json(&ErrorResponse::new("INVALID_VALUE", "validate", &msg));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(xv) = x {
+        node.transform.tx = xv;
+        modified.push("x".to_string());
+    }
+
+    if let Some(yv) = y {
+        node.transform.ty = yv;
+        modified.push("y".to_string());
+    }
+
+    // ── Size properties (frame, text, image) ──
+
+    if let Some(w) = width {
+        match &mut node.kind {
+            NodeKindWire::Frame(d) => {
+                d.width = w;
+                modified.push("width".to_string());
+            }
+            NodeKindWire::Text(d) => {
+                d.width = w;
+                modified.push("width".to_string());
+            }
+            NodeKindWire::Image(d) => {
+                d.width = w;
+                modified.push("width".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "width is only valid for frame, text, or image nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(h) = height {
+        match &mut node.kind {
+            NodeKindWire::Frame(d) => {
+                d.height = h;
+                modified.push("height".to_string());
+            }
+            NodeKindWire::Text(d) => {
+                d.height = h;
+                modified.push("height".to_string());
+            }
+            NodeKindWire::Image(d) => {
+                d.height = h;
+                modified.push("height".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "height is only valid for frame, text, or image nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    // ── Visual properties (frame, vector, text, image, boolean-op — NOT group, NOT instance) ──
+
+    if let Some(fill_str) = fill {
+        let color = match parse_color(fill_str) {
+            Ok(c) => c,
+            Err(msg) => {
+                print_json(&ErrorResponse::new("INVALID_VALUE", "validate", &msg));
+                return EXIT_INPUT;
+            }
+        };
+        match DocumentWire::visual_props_mut(&mut node.kind) {
+            Some(visual) => {
+                let new_fill = make_solid_fill(color);
+                if visual.fills.is_empty() {
+                    visual.fills.push(new_fill);
+                } else {
+                    visual.fills[0] = new_fill;
+                }
+                modified.push("fill".to_string());
+            }
+            None => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "fill is not valid for this node type",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(fo) = fill_opacity {
+        match DocumentWire::visual_props_mut(&mut node.kind) {
+            Some(visual) => {
+                if let Some(first_fill) = visual.fills.first_mut() {
+                    first_fill.opacity = StyleValue::Raw(fo);
+                }
+                modified.push("fill-opacity".to_string());
+            }
+            None => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "fill-opacity is not valid for this node type",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(stroke_str) = stroke {
+        let color = match parse_color(stroke_str) {
+            Ok(c) => c,
+            Err(msg) => {
+                print_json(&ErrorResponse::new("INVALID_VALUE", "validate", &msg));
+                return EXIT_INPUT;
+            }
+        };
+        match DocumentWire::visual_props_mut(&mut node.kind) {
+            Some(visual) => {
+                if visual.strokes.is_empty() {
+                    visual.strokes.push(make_default_stroke(color));
+                } else {
+                    visual.strokes[0].paint = Paint::Solid {
+                        color: StyleValue::Raw(color),
+                    };
+                }
+                modified.push("stroke".to_string());
+            }
+            None => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "stroke is not valid for this node type",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(sw) = stroke_width {
+        match DocumentWire::visual_props_mut(&mut node.kind) {
+            Some(visual) => {
+                if let Some(first_stroke) = visual.strokes.first_mut() {
+                    first_stroke.width = StyleValue::Raw(sw);
+                }
+                modified.push("stroke-width".to_string());
+            }
+            None => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "stroke-width is not valid for this node type",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(sp_str) = stroke_position {
+        let sp = match parse_stroke_position(sp_str) {
+            Ok(v) => v,
+            Err(msg) => {
+                print_json(&ErrorResponse::new("INVALID_VALUE", "validate", &msg));
+                return EXIT_INPUT;
+            }
+        };
+        match DocumentWire::visual_props_mut(&mut node.kind) {
+            Some(visual) => {
+                if let Some(first_stroke) = visual.strokes.first_mut() {
+                    first_stroke.position = sp;
+                }
+                modified.push("stroke-position".to_string());
+            }
+            None => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "stroke-position is not valid for this node type",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    // ── Frame-specific properties ──
+
+    if let Some(cr_str) = corner_radius {
+        match &mut node.kind {
+            NodeKindWire::Frame(d) => {
+                d.corner_radius = parse_corner_radius(cr_str);
+                modified.push("corner-radius".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "corner-radius is only valid for frame nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(cc) = clips_content {
+        match &mut node.kind {
+            NodeKindWire::Frame(d) => {
+                d.clips_content = cc;
+                modified.push("clips-content".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "clips-content is only valid for frame nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(layout_str) = layout {
+        match &mut node.kind {
+            NodeKindWire::Frame(d) => {
+                let direction = match layout_str {
+                    "horizontal" => LayoutDirection::Horizontal,
+                    "vertical" => LayoutDirection::Vertical,
+                    other => {
+                        print_json(&ErrorResponse::new(
+                            "INVALID_VALUE",
+                            "validate",
+                            &format!("invalid layout direction: {other}"),
+                        ));
+                        return EXIT_INPUT;
+                    }
+                };
+                let mut config = d.container.layout.take().unwrap_or_default();
+                config.direction = direction;
+                d.container.layout = Some(config);
+                modified.push("layout".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "layout is only valid for frame nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(pad_str) = padding {
+        match &mut node.kind {
+            NodeKindWire::Frame(d) => {
+                let pad = match parse_padding(pad_str) {
+                    Ok(p) => p,
+                    Err(msg) => {
+                        print_json(&ErrorResponse::new("INVALID_VALUE", "validate", &msg));
+                        return EXIT_INPUT;
+                    }
+                };
+                let mut config = d.container.layout.take().unwrap_or_default();
+                config.padding = pad;
+                d.container.layout = Some(config);
+                modified.push("padding".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "padding is only valid for frame nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(g) = gap {
+        match &mut node.kind {
+            NodeKindWire::Frame(d) => {
+                let mut config = d.container.layout.take().unwrap_or_default();
+                config.item_spacing = g;
+                d.container.layout = Some(config);
+                modified.push("gap".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "gap is only valid for frame nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    // ── Text-specific properties ──
+
+    if let Some(c) = content {
+        match &mut node.kind {
+            NodeKindWire::Text(d) => {
+                d.content = c.to_string();
+                modified.push("content".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "content is only valid for text nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(fs) = font_size {
+        match &mut node.kind {
+            NodeKindWire::Text(d) => {
+                d.default_style.font_size = StyleValue::Raw(fs);
+                modified.push("font-size".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "font-size is only valid for text nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(ff) = font_family {
+        match &mut node.kind {
+            NodeKindWire::Text(d) => {
+                d.default_style.font_family = StyleValue::Raw(ff.to_string());
+                modified.push("font-family".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "font-family is only valid for text nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(fw) = font_weight {
+        match &mut node.kind {
+            NodeKindWire::Text(d) => {
+                d.default_style.font_weight = StyleValue::Raw(fw);
+                modified.push("font-weight".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "font-weight is only valid for text nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(ta_str) = text_align {
+        match &mut node.kind {
+            NodeKindWire::Text(d) => {
+                let ta = match parse_text_align(ta_str) {
+                    Ok(v) => v,
+                    Err(msg) => {
+                        print_json(&ErrorResponse::new("INVALID_VALUE", "validate", &msg));
+                        return EXIT_INPUT;
+                    }
+                };
+                d.default_style.text_align = ta;
+                modified.push("text-align".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "text-align is only valid for text nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(lh_str) = line_height {
+        match &mut node.kind {
+            NodeKindWire::Text(d) => {
+                let lh = match parse_line_height(lh_str) {
+                    Ok(v) => v,
+                    Err(msg) => {
+                        print_json(&ErrorResponse::new("INVALID_VALUE", "validate", &msg));
+                        return EXIT_INPUT;
+                    }
+                };
+                d.default_style.line_height = lh;
+                modified.push("line-height".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "line-height is only valid for text nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    // Save
+    if let Err((code, err)) = save_wire(&file_path, &wire) {
+        print_json(&err);
+        return code;
+    }
+
+    print_json(&SetResponse {
+        status: "ok",
+        stable_id: stable_id.to_string(),
+        modified,
     });
     EXIT_OK
 }
