@@ -46,3 +46,42 @@ fn convert_simple_frame() {
         panic!("Expected Frame node kind");
     }
 }
+
+#[test]
+fn import_mask_basic_sets_is_mask() {
+    let json = fs::read_to_string("tests/fixtures/mask_basic.json").unwrap();
+    let file: FigmaFileResponse = serde_json::from_str(&json).unwrap();
+    let result = FigmaConverter::convert(file, None, HashMap::new()).unwrap();
+
+    // No mask warnings (mask is supported now)
+    let mask_warnings: Vec<_> = result
+        .warnings
+        .iter()
+        .filter(|w| w.message.to_lowercase().contains("mask"))
+        .collect();
+    assert!(
+        mask_warnings.is_empty(),
+        "No mask warnings expected: {:?}",
+        mask_warnings
+    );
+
+    // Find the mask node
+    let mask_node = result
+        .document
+        .nodes
+        .iter()
+        .find(|(_, n)| n.name == "MaskCircle")
+        .map(|(_, n)| n)
+        .expect("MaskCircle should exist");
+    assert!(mask_node.is_mask, "MaskCircle should have is_mask=true");
+
+    // The masked sibling should NOT have is_mask
+    let sibling = result
+        .document
+        .nodes
+        .iter()
+        .find(|(_, n)| n.name == "MaskedRect")
+        .map(|(_, n)| n)
+        .expect("MaskedRect should exist");
+    assert!(!sibling.is_mask, "MaskedRect should not be a mask");
+}
