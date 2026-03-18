@@ -171,9 +171,41 @@ fn convert_node(
         }
     }
 
-    // Recurse into children
+    // Recurse into children (with mask support)
     if let Some(children) = node.kind.children() {
+        let mut mask_open = false;
+
         for &child_id in children {
+            let child = &doc.nodes[child_id];
+
+            if child.is_mask {
+                // Close previous mask group if open
+                if mask_open {
+                    commands.push(RenderCommand::PopLayer);
+                }
+
+                // Extract mask node's outline path
+                let child_layout = layout_map.get(&child_id);
+                if let Some(mut mask_path) = get_node_path(doc, child, child_layout) {
+                    // Transform path from mask-local to parent-local coordinates
+                    let affine = node_local_affine(child, child_layout);
+                    mask_path.apply_affine(affine);
+
+                    commands.push(RenderCommand::PushLayer {
+                        opacity: 1.0,
+                        blend_mode: BlendMode::Normal,
+                        clip: Some(mask_path),
+                        transform: current_transform,
+                    });
+                    mask_open = true;
+                } else {
+                    // Mask node has no extractable path (e.g. Group) — skip gracefully
+                    mask_open = false;
+                }
+                // Mask node is NOT rendered — skip to next sibling
+                continue;
+            }
+
             convert_node(
                 doc,
                 child_id,
@@ -183,6 +215,10 @@ fn convert_node(
                 layout_map,
                 stable_id_index,
             )?;
+        }
+
+        if mask_open {
+            commands.push(RenderCommand::PopLayer);
         }
     }
 
@@ -509,20 +545,49 @@ fn resolve_instance(
         &doc.tokens,
     );
 
-    // Recurse into component's children
-    for &child_id in &comp_frame.container.children {
-        convert_component_child(
-            doc,
-            child_id,
-            current_transform,
-            commands,
-            font_db,
-            layout_map,
-            stable_id_index,
-            &override_map,
-            resolution_stack,
-            resolution_set,
-        )?;
+    // Recurse into component's children (with mask support)
+    {
+        let mut mask_open = false;
+        for &child_id in &comp_frame.container.children {
+            let child = &doc.nodes[child_id];
+
+            if child.is_mask {
+                if mask_open {
+                    commands.push(RenderCommand::PopLayer);
+                }
+                let child_layout = layout_map.get(&child_id);
+                if let Some(mut mask_path) = get_node_path(doc, child, child_layout) {
+                    let affine = node_local_affine(child, child_layout);
+                    mask_path.apply_affine(affine);
+                    commands.push(RenderCommand::PushLayer {
+                        opacity: 1.0,
+                        blend_mode: BlendMode::Normal,
+                        clip: Some(mask_path),
+                        transform: current_transform,
+                    });
+                    mask_open = true;
+                } else {
+                    mask_open = false;
+                }
+                continue;
+            }
+
+            convert_component_child(
+                doc,
+                child_id,
+                current_transform,
+                commands,
+                font_db,
+                layout_map,
+                stable_id_index,
+                &override_map,
+                resolution_stack,
+                resolution_set,
+            )?;
+        }
+        if mask_open {
+            commands.push(RenderCommand::PopLayer);
+        }
     }
 
     // PopLayer
@@ -688,9 +753,33 @@ fn convert_component_child(
         }
     }
 
-    // Recurse into this child's children (still within component tree)
+    // Recurse into this child's children (with mask support)
     if let Some(children) = child.kind.children() {
+        let mut mask_open = false;
         for &grandchild_id in children {
+            let grandchild = &doc.nodes[grandchild_id];
+
+            if grandchild.is_mask {
+                if mask_open {
+                    commands.push(RenderCommand::PopLayer);
+                }
+                let gc_layout = layout_map.get(&grandchild_id);
+                if let Some(mut mask_path) = get_node_path(doc, grandchild, gc_layout) {
+                    let affine = node_local_affine(grandchild, gc_layout);
+                    mask_path.apply_affine(affine);
+                    commands.push(RenderCommand::PushLayer {
+                        opacity: 1.0,
+                        blend_mode: BlendMode::Normal,
+                        clip: Some(mask_path),
+                        transform: current_transform,
+                    });
+                    mask_open = true;
+                } else {
+                    mask_open = false;
+                }
+                continue;
+            }
+
             convert_component_child(
                 doc,
                 grandchild_id,
@@ -703,6 +792,9 @@ fn convert_component_child(
                 resolution_stack,
                 resolution_set,
             )?;
+        }
+        if mask_open {
+            commands.push(RenderCommand::PopLayer);
         }
     }
 
@@ -928,6 +1020,28 @@ fn get_fill_rule(node: &Node) -> ode_format::node::FillRule {
         data.fill_rule
     } else {
         OdeFillRule::NonZero
+    }
+}
+
+/// Compute a node's local-to-parent affine transform (kurbo).
+/// Used to transform mask paths from mask-local to parent-local coordinates.
+fn node_local_affine(
+    node: &Node,
+    layout_rect: Option<&crate::layout::LayoutRect>,
+) -> kurbo::Affine {
+    let t = &node.transform;
+    if let Some(rect) = layout_rect {
+        kurbo::Affine::new([
+            t.a as f64, t.b as f64,
+            t.c as f64, t.d as f64,
+            rect.x as f64, rect.y as f64,
+        ])
+    } else {
+        kurbo::Affine::new([
+            t.a as f64, t.b as f64,
+            t.c as f64, t.d as f64,
+            t.tx as f64, t.ty as f64,
+        ])
     }
 }
 
@@ -2158,5 +2272,237 @@ mod tests {
             }
             other => panic!("Expected PushLayer, got {:?}", other),
         }
+    }
+
+    // ─── Mask Rendering Tests ───
+
+    #[test]
+    fn mask_node_clips_subsequent_siblings() {
+        use ode_format::node::{PathSegment, VectorPath};
+
+        let mut doc = Document::new("MaskTest");
+
+        let mut mask_node = Node::new_vector(
+            "Mask",
+            VectorPath {
+                segments: vec![
+                    PathSegment::MoveTo { x: 0.0, y: 0.0 },
+                    PathSegment::LineTo { x: 50.0, y: 0.0 },
+                    PathSegment::LineTo { x: 50.0, y: 50.0 },
+                    PathSegment::LineTo { x: 0.0, y: 50.0 },
+                ],
+                closed: true,
+            },
+        );
+        mask_node.is_mask = true;
+        let mask_id = doc.nodes.insert(mask_node);
+
+        let mut sibling = Node::new_vector(
+            "Rect",
+            VectorPath {
+                segments: vec![
+                    PathSegment::MoveTo { x: 0.0, y: 0.0 },
+                    PathSegment::LineTo { x: 100.0, y: 0.0 },
+                    PathSegment::LineTo { x: 100.0, y: 100.0 },
+                    PathSegment::LineTo { x: 0.0, y: 100.0 },
+                ],
+                closed: true,
+            },
+        );
+        if let NodeKind::Vector(ref mut data) = sibling.kind {
+            data.visual.fills.push(Fill {
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(Color::Srgb {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: BlendMode::Normal,
+                visible: true,
+            });
+        }
+        let sibling_id = doc.nodes.insert(sibling);
+
+        let mut frame = Node::new_frame("Root", 200.0, 200.0);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.container.children = vec![mask_id, sibling_id];
+        }
+        let fid = doc.nodes.insert(frame);
+        doc.canvas.push(fid);
+
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+
+        // Should have 2 PushLayers with clips: frame clip + mask clip
+        let clip_count = scene
+            .commands
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::PushLayer { clip: Some(_), .. }))
+            .count();
+        assert!(
+            clip_count >= 2,
+            "Expected at least 2 PushLayers with clips (frame + mask), got {}",
+            clip_count
+        );
+
+        // Only the sibling's fill should render (mask is not rendered)
+        let fill_count = scene
+            .commands
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::FillPath { .. }))
+            .count();
+        assert_eq!(
+            fill_count, 1,
+            "Only the sibling's fill should be rendered, not the mask's"
+        );
+    }
+
+    #[test]
+    fn nodes_before_mask_are_not_clipped() {
+        use ode_format::node::{PathSegment, VectorPath};
+
+        let mut doc = Document::new("PreMask");
+
+        let mut pre_node = Node::new_vector(
+            "PreRect",
+            VectorPath {
+                segments: vec![
+                    PathSegment::MoveTo { x: 0.0, y: 0.0 },
+                    PathSegment::LineTo { x: 100.0, y: 0.0 },
+                    PathSegment::LineTo { x: 100.0, y: 100.0 },
+                    PathSegment::LineTo { x: 0.0, y: 100.0 },
+                ],
+                closed: true,
+            },
+        );
+        if let NodeKind::Vector(ref mut data) = pre_node.kind {
+            data.visual.fills.push(Fill {
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(Color::Srgb {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: BlendMode::Normal,
+                visible: true,
+            });
+        }
+        let pre_id = doc.nodes.insert(pre_node);
+
+        let mut mask_node = Node::new_vector(
+            "Mask",
+            VectorPath {
+                segments: vec![
+                    PathSegment::MoveTo { x: 0.0, y: 0.0 },
+                    PathSegment::LineTo { x: 50.0, y: 0.0 },
+                    PathSegment::LineTo { x: 50.0, y: 50.0 },
+                    PathSegment::LineTo { x: 0.0, y: 50.0 },
+                ],
+                closed: true,
+            },
+        );
+        mask_node.is_mask = true;
+        let mask_id = doc.nodes.insert(mask_node);
+
+        let mut post_node = Node::new_vector(
+            "PostRect",
+            VectorPath {
+                segments: vec![
+                    PathSegment::MoveTo { x: 0.0, y: 0.0 },
+                    PathSegment::LineTo { x: 80.0, y: 0.0 },
+                    PathSegment::LineTo { x: 80.0, y: 80.0 },
+                    PathSegment::LineTo { x: 0.0, y: 80.0 },
+                ],
+                closed: true,
+            },
+        );
+        if let NodeKind::Vector(ref mut data) = post_node.kind {
+            data.visual.fills.push(Fill {
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(Color::Srgb {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: BlendMode::Normal,
+                visible: true,
+            });
+        }
+        let post_id = doc.nodes.insert(post_node);
+
+        let mut frame = Node::new_frame("Root", 200.0, 200.0);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.clips_content = false;
+            data.container.children = vec![pre_id, mask_id, post_id];
+        }
+        let fid = doc.nodes.insert(frame);
+        doc.canvas.push(fid);
+
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+
+        // Both fills should render
+        let fill_count = scene
+            .commands
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::FillPath { .. }))
+            .count();
+        assert_eq!(
+            fill_count, 2,
+            "Both pre-mask and post-mask fills should render"
+        );
+
+        // Only 1 clip (mask group) — frame has clips_content=false
+        let clip_count = scene
+            .commands
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::PushLayer { clip: Some(_), .. }))
+            .count();
+        assert_eq!(clip_count, 1, "Only the mask group should have a clip");
+    }
+
+    #[test]
+    fn mask_group_node_skipped_no_path() {
+        let mut doc = Document::new("GroupMask");
+
+        let mut mask_group = Node::new_group("MaskGroup");
+        mask_group.is_mask = true;
+        let mask_id = doc.nodes.insert(mask_group);
+
+        let mut sibling = Node::new_frame("Child", 50.0, 50.0);
+        if let NodeKind::Frame(ref mut data) = sibling.kind {
+            data.visual.fills.push(Fill {
+                paint: Paint::Solid {
+                    color: StyleValue::Raw(Color::Srgb {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: BlendMode::Normal,
+                visible: true,
+            });
+        }
+        let sib_id = doc.nodes.insert(sibling);
+
+        let mut frame = Node::new_frame("Root", 200.0, 200.0);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.container.children = vec![mask_id, sib_id];
+        }
+        let fid = doc.nodes.insert(frame);
+        doc.canvas.push(fid);
+
+        // Should not panic — group mask is silently skipped (no clip applied)
+        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        assert!(!scene.commands.is_empty());
     }
 }
