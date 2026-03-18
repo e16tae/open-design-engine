@@ -1,8 +1,8 @@
 //! Figma layout conversion: auto layout config, sizing, constraints, transform.
 
 use ode_format::node::{
-    ConstraintAxis, Constraints, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding,
-    LayoutSizing, LayoutWrap, PrimaryAxisAlign, SizingMode, Transform,
+    ConstraintAxis, Constraints, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutMode,
+    LayoutPadding, LayoutSizing, LayoutWrap, PrimaryAxisAlign, SizingMode, Transform,
 };
 
 use super::types::FigmaLayoutConstraint;
@@ -75,11 +75,13 @@ pub fn convert_layout_config(
     };
 
     Some(LayoutConfig {
+        mode: LayoutMode::Flex,
         direction,
         primary_axis_align,
         counter_axis_align,
         padding,
         item_spacing: item_spacing.unwrap_or(0.0),
+        counter_axis_spacing: 0.0,
         wrap: layout_wrap,
     })
 }

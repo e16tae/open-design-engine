@@ -624,8 +624,8 @@ mod tests {
     use super::*;
     use ode_format::document::Document;
     use ode_format::node::{
-        ConstraintAxis, Constraints, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding,
-        LayoutSizing, LayoutWrap, Node, NodeKind, PrimaryAxisAlign, SizingMode,
+        ConstraintAxis, Constraints, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutMode,
+        LayoutPadding, LayoutSizing, LayoutWrap, Node, NodeKind, PrimaryAxisAlign, SizingMode,
     };
 
     /// Helper: create a frame with auto layout enabled.
@@ -649,11 +649,13 @@ mod tests {
 
     fn default_config() -> LayoutConfig {
         LayoutConfig {
+            mode: LayoutMode::Flex,
             direction: LayoutDirection::Horizontal,
             primary_axis_align: PrimaryAxisAlign::Start,
             counter_axis_align: CounterAxisAlign::Start,
             padding: LayoutPadding::default(),
             item_spacing: 0.0,
+            counter_axis_spacing: 0.0,
             wrap: LayoutWrap::NoWrap,
         }
     }
@@ -701,6 +703,7 @@ mod tests {
         let mut doc = Document::new("Test");
 
         let config = LayoutConfig {
+            mode: LayoutMode::Flex,
             direction: LayoutDirection::Vertical,
             primary_axis_align: PrimaryAxisAlign::Start,
             counter_axis_align: CounterAxisAlign::Start,
@@ -711,6 +714,7 @@ mod tests {
                 left: 10.0,
             },
             item_spacing: 8.0,
+            counter_axis_spacing: 0.0,
             wrap: LayoutWrap::NoWrap,
         };
         let mut parent = make_auto_layout_frame("Parent", 200.0, 200.0, config);
@@ -911,11 +915,13 @@ mod tests {
         let mut doc = Document::new("Test");
 
         let config = LayoutConfig {
+            mode: LayoutMode::Flex,
             direction: LayoutDirection::Horizontal,
             primary_axis_align: PrimaryAxisAlign::Center,
             counter_axis_align: CounterAxisAlign::Center,
             padding: LayoutPadding::default(),
             item_spacing: 0.0,
+            counter_axis_spacing: 0.0,
             wrap: LayoutWrap::NoWrap,
         };
         let mut parent = make_auto_layout_frame("Parent", 200.0, 100.0, config);
@@ -943,11 +949,13 @@ mod tests {
         let mut doc = Document::new("Test");
 
         let config = LayoutConfig {
+            mode: LayoutMode::Flex,
             direction: LayoutDirection::Horizontal,
             primary_axis_align: PrimaryAxisAlign::SpaceBetween,
             counter_axis_align: CounterAxisAlign::Start,
             padding: LayoutPadding::default(),
             item_spacing: 0.0,
+            counter_axis_spacing: 0.0,
             wrap: LayoutWrap::NoWrap,
         };
         let mut parent = make_auto_layout_frame("Parent", 200.0, 100.0, config);

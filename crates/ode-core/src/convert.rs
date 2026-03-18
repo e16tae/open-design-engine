@@ -1250,7 +1250,7 @@ mod tests {
     #[test]
     fn auto_layout_document_produces_scene() {
         use ode_format::node::{
-            CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding, LayoutWrap,
+            CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutMode, LayoutPadding, LayoutWrap,
             PrimaryAxisAlign,
         };
 
@@ -1260,11 +1260,13 @@ mod tests {
         let mut parent = Node::new_frame("Container", 300.0, 100.0);
         if let NodeKind::Frame(ref mut data) = parent.kind {
             data.container.layout = Some(LayoutConfig {
+                mode: LayoutMode::Flex,
                 direction: LayoutDirection::Horizontal,
                 primary_axis_align: PrimaryAxisAlign::Start,
                 counter_axis_align: CounterAxisAlign::Start,
                 padding: LayoutPadding::default(),
                 item_spacing: 10.0,
+                counter_axis_spacing: 0.0,
                 wrap: LayoutWrap::NoWrap,
             });
             data.visual.fills.push(Fill {
@@ -1907,8 +1909,8 @@ mod tests {
     #[test]
     fn instance_expands_auto_layout_component_children() {
         use ode_format::node::{
-            ComponentDef, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutPadding,
-            LayoutWrap, PrimaryAxisAlign,
+            ComponentDef, CounterAxisAlign, LayoutConfig, LayoutDirection, LayoutMode,
+            LayoutPadding, LayoutWrap, PrimaryAxisAlign,
         };
 
         let mut doc = Document::new("Auto Layout Component Test");
@@ -1961,11 +1963,13 @@ mod tests {
                 description: "".to_string(),
             });
             data.container.layout = Some(LayoutConfig {
+                mode: LayoutMode::Flex,
                 direction: LayoutDirection::Horizontal,
                 primary_axis_align: PrimaryAxisAlign::Start,
                 counter_axis_align: CounterAxisAlign::Start,
                 padding: LayoutPadding::default(),
                 item_spacing: 10.0,
+                counter_axis_spacing: 0.0,
                 wrap: LayoutWrap::NoWrap,
             });
             data.container.children = vec![c1_id, c2_id];

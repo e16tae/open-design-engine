@@ -142,10 +142,26 @@ pub struct ContainerProps {
     pub layout: Option<LayoutConfig>,
 }
 
-/// Auto layout configuration for a container (Flexbox-based).
+/// Layout mode: Flexbox or CSS Grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum LayoutMode {
+    Flex,
+    Grid,
+}
+
+impl Default for LayoutMode {
+    fn default() -> Self {
+        Self::Flex
+    }
+}
+
+/// Auto layout configuration for a container (Flexbox or Grid).
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub struct LayoutConfig {
+    #[serde(default)]
+    pub mode: LayoutMode,
     #[serde(default)]
     pub direction: LayoutDirection,
     #[serde(default)]
@@ -156,6 +172,9 @@ pub struct LayoutConfig {
     pub padding: LayoutPadding,
     #[serde(default)]
     pub item_spacing: f32,
+    /// Cross-axis gap (row gap for horizontal grid/wrapped flex).
+    #[serde(default)]
+    pub counter_axis_spacing: f32,
     #[serde(default)]
     pub wrap: LayoutWrap,
 }
@@ -893,6 +912,7 @@ mod tests {
     #[test]
     fn layout_config_serde_roundtrip() {
         let config = LayoutConfig {
+            mode: LayoutMode::Flex,
             direction: LayoutDirection::Vertical,
             primary_axis_align: PrimaryAxisAlign::SpaceBetween,
             counter_axis_align: CounterAxisAlign::Stretch,
@@ -903,6 +923,7 @@ mod tests {
                 left: 16.0,
             },
             item_spacing: 12.0,
+            counter_axis_spacing: 0.0,
             wrap: LayoutWrap::Wrap,
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -919,6 +940,33 @@ mod tests {
         assert_eq!(config.counter_axis_align, CounterAxisAlign::Start);
         assert!((config.item_spacing - 0.0).abs() < f32::EPSILON);
         assert_eq!(config.wrap, LayoutWrap::NoWrap);
+    }
+
+    #[test]
+    fn layout_config_grid_mode_round_trip() {
+        let config = LayoutConfig {
+            mode: LayoutMode::Grid,
+            direction: LayoutDirection::Horizontal,
+            primary_axis_align: PrimaryAxisAlign::Start,
+            counter_axis_align: CounterAxisAlign::Start,
+            padding: LayoutPadding::default(),
+            item_spacing: 10.0,
+            counter_axis_spacing: 20.0,
+            wrap: LayoutWrap::Wrap,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"mode\":\"grid\""));
+        let deserialized: LayoutConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.mode, LayoutMode::Grid);
+        assert!((deserialized.counter_axis_spacing - 20.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn layout_config_defaults_to_flex_mode() {
+        let json = r#"{"direction":"horizontal","primary-axis-align":"start","counter-axis-align":"start","padding":{"top":0,"right":0,"bottom":0,"left":0},"item-spacing":0,"wrap":"no-wrap"}"#;
+        let config: LayoutConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.mode, LayoutMode::Flex);
+        assert!((config.counter_axis_spacing - 0.0).abs() < f32::EPSILON);
     }
 
     #[test]
