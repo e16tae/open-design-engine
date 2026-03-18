@@ -1130,6 +1130,7 @@ name = "ode-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "nanoid",
  "ode-core",
  "ode-export",
  "ode-format",
@@ -1139,6 +1140,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 

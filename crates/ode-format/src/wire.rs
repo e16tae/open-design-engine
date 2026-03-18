@@ -298,6 +298,134 @@ impl DocumentWire {
     }
 }
 
+// ─── Wire mutation helpers ───
+
+impl DocumentWire {
+    /// Check if a node kind can have children.
+    pub fn is_container(kind: &NodeKindWire) -> bool {
+        matches!(
+            kind,
+            NodeKindWire::Frame(_)
+                | NodeKindWire::Group(_)
+                | NodeKindWire::BooleanOp(_)
+                | NodeKindWire::Instance(_)
+        )
+    }
+
+    /// Get mutable reference to a node kind's children list.
+    pub fn children_of_kind_mut(kind: &mut NodeKindWire) -> Option<&mut Vec<String>> {
+        match kind {
+            NodeKindWire::Frame(d) => Some(&mut d.container.children),
+            NodeKindWire::Group(d) => Some(&mut d.children),
+            NodeKindWire::BooleanOp(d) => Some(&mut d.children),
+            NodeKindWire::Instance(d) => Some(&mut d.container.children),
+            _ => None,
+        }
+    }
+
+    /// Find a node by stable_id.
+    pub fn find_node(&self, stable_id: &str) -> Option<&NodeWire> {
+        self.nodes.iter().find(|n| n.stable_id == stable_id)
+    }
+
+    /// Find a node by stable_id (mutable).
+    pub fn find_node_mut(&mut self, stable_id: &str) -> Option<&mut NodeWire> {
+        self.nodes.iter_mut().find(|n| n.stable_id == stable_id)
+    }
+
+    /// Find the stable_id of the parent that has child_id in its children.
+    pub fn find_parent(&self, child_id: &str) -> Option<String> {
+        for node in &self.nodes {
+            let children = match &node.kind {
+                NodeKindWire::Frame(d) => Some(d.container.children.as_slice()),
+                NodeKindWire::Group(d) => Some(d.children.as_slice()),
+                NodeKindWire::BooleanOp(d) => Some(d.children.as_slice()),
+                NodeKindWire::Instance(d) => Some(d.container.children.as_slice()),
+                _ => None,
+            };
+            if let Some(children) = children {
+                if children.iter().any(|c| c == child_id) {
+                    return Some(node.stable_id.clone());
+                }
+            }
+        }
+        None
+    }
+
+    /// Remove child_id from whichever parent's children list contains it.
+    pub fn remove_child_from_parent(&mut self, child_id: &str) {
+        for node in &mut self.nodes {
+            let children = match &mut node.kind {
+                NodeKindWire::Frame(d) => Some(&mut d.container.children),
+                NodeKindWire::Group(d) => Some(&mut d.children),
+                NodeKindWire::BooleanOp(d) => Some(&mut d.children),
+                NodeKindWire::Instance(d) => Some(&mut d.container.children),
+                _ => None,
+            };
+            if let Some(children) = children {
+                if let Some(pos) = children.iter().position(|c| c == child_id) {
+                    children.remove(pos);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Collect all descendant stable_ids recursively.
+    pub fn collect_descendants(&self, stable_id: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut queue = std::collections::VecDeque::new();
+
+        // Seed the queue with direct children of stable_id
+        if let Some(node) = self.find_node(stable_id) {
+            let children = match &node.kind {
+                NodeKindWire::Frame(d) => Some(d.container.children.as_slice()),
+                NodeKindWire::Group(d) => Some(d.children.as_slice()),
+                NodeKindWire::BooleanOp(d) => Some(d.children.as_slice()),
+                NodeKindWire::Instance(d) => Some(d.container.children.as_slice()),
+                _ => None,
+            };
+            if let Some(children) = children {
+                for c in children {
+                    queue.push_back(c.clone());
+                }
+            }
+        }
+
+        while let Some(current) = queue.pop_front() {
+            result.push(current.clone());
+            if let Some(node) = self.find_node(&current) {
+                let children = match &node.kind {
+                    NodeKindWire::Frame(d) => Some(d.container.children.as_slice()),
+                    NodeKindWire::Group(d) => Some(d.children.as_slice()),
+                    NodeKindWire::BooleanOp(d) => Some(d.children.as_slice()),
+                    NodeKindWire::Instance(d) => Some(d.container.children.as_slice()),
+                    _ => None,
+                };
+                if let Some(children) = children {
+                    for c in children {
+                        queue.push_back(c.clone());
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Get mutable reference to a node kind's VisualProps (if it has one).
+    pub fn visual_props_mut(kind: &mut NodeKindWire) -> Option<&mut VisualProps> {
+        match kind {
+            NodeKindWire::Frame(d) => Some(&mut d.visual),
+            NodeKindWire::Vector(d) => Some(&mut d.visual),
+            NodeKindWire::BooleanOp(d) => Some(&mut d.visual),
+            NodeKindWire::Text(d) => Some(&mut d.visual),
+            NodeKindWire::Image(d) => Some(&mut d.visual),
+            _ => None,
+        }
+    }
+}
+
 // ─── Node conversion helpers ───
 
 fn node_to_wire(node: &Node, resolve: &dyn Fn(&NodeId) -> String) -> NodeWire {
@@ -706,6 +834,318 @@ mod tests {
         } else {
             panic!("Expected Web view kind");
         }
+    }
+
+    // ─── Shared helper for mutation helper tests ───
+
+    fn make_test_wire() -> DocumentWire {
+        DocumentWire {
+            format_version: Version(0, 2, 0),
+            name: "Test".to_string(),
+            nodes: vec![
+                NodeWire {
+                    stable_id: "frame-1".to_string(),
+                    name: "Parent Frame".to_string(),
+                    transform: Transform::default(),
+                    opacity: 1.0,
+                    blend_mode: BlendMode::Normal,
+                    visible: true,
+                    constraints: None,
+                    layout_sizing: None,
+                    kind: NodeKindWire::Frame(FrameDataWire {
+                        width: 200.0,
+                        height: 100.0,
+                        width_sizing: SizingMode::Fixed,
+                        height_sizing: SizingMode::Fixed,
+                        corner_radius: [0.0; 4],
+                        clips_content: true,
+                        visual: VisualProps::default(),
+                        container: ContainerPropsWire {
+                            children: vec!["text-1".to_string()],
+                            layout: None,
+                        },
+                        component_def: None,
+                    }),
+                },
+                NodeWire {
+                    stable_id: "text-1".to_string(),
+                    name: "Child Text".to_string(),
+                    transform: Transform::default(),
+                    opacity: 1.0,
+                    blend_mode: BlendMode::Normal,
+                    visible: true,
+                    constraints: None,
+                    layout_sizing: None,
+                    kind: NodeKindWire::Text(TextDataWire {
+                        visual: VisualProps::default(),
+                        content: "Hello".to_string(),
+                        runs: Vec::new(),
+                        default_style: TextStyle::default(),
+                        width: 100.0,
+                        height: 100.0,
+                        sizing_mode: TextSizingMode::Fixed,
+                    }),
+                },
+            ],
+            canvas: vec!["frame-1".to_string()],
+            tokens: DesignTokens::new(),
+            views: vec![],
+            working_color_space: WorkingColorSpace::default(),
+        }
+    }
+
+    #[test]
+    fn is_container_returns_true_for_frame_group_booleanop_instance() {
+        use crate::node::BooleanOperation;
+
+        let frame_kind = NodeKindWire::Frame(FrameDataWire {
+            width: 0.0,
+            height: 0.0,
+            width_sizing: SizingMode::Fixed,
+            height_sizing: SizingMode::Fixed,
+            corner_radius: [0.0; 4],
+            clips_content: true,
+            visual: VisualProps::default(),
+            container: ContainerPropsWire { children: vec![], layout: None },
+            component_def: None,
+        });
+        let group_kind = NodeKindWire::Group(GroupDataWire { children: vec![] });
+        let bool_kind = NodeKindWire::BooleanOp(BooleanOpDataWire {
+            visual: VisualProps::default(),
+            op: BooleanOperation::Union,
+            children: vec![],
+        });
+        let instance_kind = NodeKindWire::Instance(InstanceDataWire {
+            container: ContainerPropsWire { children: vec![], layout: None },
+            source_component: "comp-1".to_string(),
+            width: None,
+            height: None,
+            overrides: vec![],
+        });
+        let text_kind = NodeKindWire::Text(TextDataWire {
+            visual: VisualProps::default(),
+            content: "".to_string(),
+            runs: vec![],
+            default_style: TextStyle::default(),
+            width: 100.0,
+            height: 100.0,
+            sizing_mode: TextSizingMode::Fixed,
+        });
+
+        assert!(DocumentWire::is_container(&frame_kind));
+        assert!(DocumentWire::is_container(&group_kind));
+        assert!(DocumentWire::is_container(&bool_kind));
+        assert!(DocumentWire::is_container(&instance_kind));
+        assert!(!DocumentWire::is_container(&text_kind));
+    }
+
+    #[test]
+    fn find_node_by_stable_id() {
+        let wire = make_test_wire();
+
+        let found = wire.find_node("frame-1");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "Parent Frame");
+
+        let found_text = wire.find_node("text-1");
+        assert!(found_text.is_some());
+        assert_eq!(found_text.unwrap().name, "Child Text");
+
+        let not_found = wire.find_node("nonexistent");
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn find_node_mut_modifies_in_place() {
+        let mut wire = make_test_wire();
+
+        {
+            let node = wire.find_node_mut("text-1").unwrap();
+            node.name = "Modified Text".to_string();
+        }
+
+        let node = wire.find_node("text-1").unwrap();
+        assert_eq!(node.name, "Modified Text");
+    }
+
+    #[test]
+    fn find_parent_returns_parent_stable_id() {
+        let wire = make_test_wire();
+
+        let parent = wire.find_parent("text-1");
+        assert_eq!(parent, Some("frame-1".to_string()));
+
+        // Root node has no parent
+        let root_parent = wire.find_parent("frame-1");
+        assert!(root_parent.is_none());
+
+        // Non-existent node has no parent
+        let missing_parent = wire.find_parent("ghost");
+        assert!(missing_parent.is_none());
+    }
+
+    #[test]
+    fn remove_child_from_parent_updates_children() {
+        let mut wire = make_test_wire();
+
+        // Verify text-1 is a child of frame-1 before removal
+        if let NodeKindWire::Frame(ref d) = wire.find_node("frame-1").unwrap().kind {
+            assert!(d.container.children.contains(&"text-1".to_string()));
+        }
+
+        wire.remove_child_from_parent("text-1");
+
+        // Verify children vec is now empty
+        if let NodeKindWire::Frame(ref d) = wire.find_node("frame-1").unwrap().kind {
+            assert!(d.container.children.is_empty());
+        } else {
+            panic!("Expected Frame");
+        }
+    }
+
+    #[test]
+    fn collect_descendants_returns_all_nested() {
+        // Build: frame-1 → group-1 → text-1
+        let mut wire = DocumentWire {
+            format_version: Version(0, 2, 0),
+            name: "Nested".to_string(),
+            nodes: vec![
+                NodeWire {
+                    stable_id: "frame-1".to_string(),
+                    name: "Frame".to_string(),
+                    transform: Transform::default(),
+                    opacity: 1.0,
+                    blend_mode: BlendMode::Normal,
+                    visible: true,
+                    constraints: None,
+                    layout_sizing: None,
+                    kind: NodeKindWire::Frame(FrameDataWire {
+                        width: 200.0,
+                        height: 100.0,
+                        width_sizing: SizingMode::Fixed,
+                        height_sizing: SizingMode::Fixed,
+                        corner_radius: [0.0; 4],
+                        clips_content: true,
+                        visual: VisualProps::default(),
+                        container: ContainerPropsWire {
+                            children: vec!["group-1".to_string()],
+                            layout: None,
+                        },
+                        component_def: None,
+                    }),
+                },
+                NodeWire {
+                    stable_id: "group-1".to_string(),
+                    name: "Group".to_string(),
+                    transform: Transform::default(),
+                    opacity: 1.0,
+                    blend_mode: BlendMode::Normal,
+                    visible: true,
+                    constraints: None,
+                    layout_sizing: None,
+                    kind: NodeKindWire::Group(GroupDataWire {
+                        children: vec!["text-1".to_string()],
+                    }),
+                },
+                NodeWire {
+                    stable_id: "text-1".to_string(),
+                    name: "Text".to_string(),
+                    transform: Transform::default(),
+                    opacity: 1.0,
+                    blend_mode: BlendMode::Normal,
+                    visible: true,
+                    constraints: None,
+                    layout_sizing: None,
+                    kind: NodeKindWire::Text(TextDataWire {
+                        visual: VisualProps::default(),
+                        content: "Hi".to_string(),
+                        runs: vec![],
+                        default_style: TextStyle::default(),
+                        width: 100.0,
+                        height: 100.0,
+                        sizing_mode: TextSizingMode::Fixed,
+                    }),
+                },
+            ],
+            canvas: vec!["frame-1".to_string()],
+            tokens: DesignTokens::new(),
+            views: vec![],
+            working_color_space: WorkingColorSpace::default(),
+        };
+
+        let descendants = wire.collect_descendants("frame-1");
+        assert_eq!(descendants.len(), 2);
+        assert!(descendants.contains(&"group-1".to_string()));
+        assert!(descendants.contains(&"text-1".to_string()));
+    }
+
+    #[test]
+    fn collect_descendants_of_leaf_is_empty() {
+        let wire = make_test_wire();
+        let descendants = wire.collect_descendants("text-1");
+        assert!(descendants.is_empty());
+    }
+
+    #[test]
+    fn visual_props_mut_works_for_frame_and_text() {
+        use crate::style::{Fill, Paint, BlendMode as StyleBlendMode};
+        use crate::style::StyleValue;
+        use crate::color::Color;
+
+        let mut frame_kind = NodeKindWire::Frame(FrameDataWire {
+            width: 0.0,
+            height: 0.0,
+            width_sizing: SizingMode::Fixed,
+            height_sizing: SizingMode::Fixed,
+            corner_radius: [0.0; 4],
+            clips_content: true,
+            visual: VisualProps::default(),
+            container: ContainerPropsWire { children: vec![], layout: None },
+            component_def: None,
+        });
+
+        // Frame returns Some and we can mutate fills
+        {
+            let vp = DocumentWire::visual_props_mut(&mut frame_kind).unwrap();
+            vp.fills.push(Fill {
+                paint: Paint::Solid { color: StyleValue::Raw(Color::black()) },
+                opacity: StyleValue::Raw(1.0),
+                blend_mode: StyleBlendMode::Normal,
+                visible: true,
+            });
+        }
+        if let NodeKindWire::Frame(ref d) = frame_kind {
+            assert_eq!(d.visual.fills.len(), 1);
+        } else {
+            panic!("Expected Frame");
+        }
+
+        let mut text_kind = NodeKindWire::Text(TextDataWire {
+            visual: VisualProps::default(),
+            content: "".to_string(),
+            runs: vec![],
+            default_style: TextStyle::default(),
+            width: 100.0,
+            height: 100.0,
+            sizing_mode: TextSizingMode::Fixed,
+        });
+
+        // Text returns Some
+        assert!(DocumentWire::visual_props_mut(&mut text_kind).is_some());
+
+        // Group has no visual props
+        let mut group_kind = NodeKindWire::Group(GroupDataWire { children: vec![] });
+        assert!(DocumentWire::visual_props_mut(&mut group_kind).is_none());
+
+        // Instance has no visual props
+        let mut instance_kind = NodeKindWire::Instance(InstanceDataWire {
+            container: ContainerPropsWire { children: vec![], layout: None },
+            source_component: "comp-1".to_string(),
+            width: None,
+            height: None,
+            overrides: vec![],
+        });
+        assert!(DocumentWire::visual_props_mut(&mut instance_kind).is_none());
     }
 
     #[test]

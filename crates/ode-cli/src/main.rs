@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 
 mod commands;
 mod knowledge;
+mod mutate;
 mod output;
 mod validate;
 
@@ -111,6 +112,116 @@ enum Command {
         /// Only check rules from a specific layer
         #[arg(long)]
         layer: Option<String>,
+    },
+    /// Set properties on an existing node
+    Set {
+        /// Document file path
+        file: String,
+        /// Node stable_id
+        stable_id: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        visible: Option<bool>,
+        #[arg(long)]
+        opacity: Option<f32>,
+        #[arg(long)]
+        blend_mode: Option<String>,
+        #[arg(long)]
+        x: Option<f32>,
+        #[arg(long)]
+        y: Option<f32>,
+        #[arg(long)]
+        width: Option<f32>,
+        #[arg(long)]
+        height: Option<f32>,
+        #[arg(long)]
+        fill: Option<String>,
+        #[arg(long)]
+        fill_opacity: Option<f32>,
+        #[arg(long)]
+        stroke: Option<String>,
+        #[arg(long)]
+        stroke_width: Option<f32>,
+        #[arg(long)]
+        stroke_position: Option<String>,
+        #[arg(long, value_name = "R or TL,TR,BR,BL")]
+        corner_radius: Option<String>,
+        #[arg(long)]
+        clips_content: Option<bool>,
+        #[arg(long)]
+        layout: Option<String>,
+        #[arg(long, value_name = "P or T,R,B,L")]
+        padding: Option<String>,
+        #[arg(long)]
+        gap: Option<f32>,
+        #[arg(long)]
+        content: Option<String>,
+        #[arg(long)]
+        font_size: Option<f32>,
+        #[arg(long)]
+        font_family: Option<String>,
+        #[arg(long)]
+        font_weight: Option<u16>,
+        #[arg(long)]
+        text_align: Option<String>,
+        #[arg(long)]
+        line_height: Option<String>,
+    },
+    /// Delete a node and its descendants
+    Delete {
+        /// Document file path
+        file: String,
+        /// Node stable_id to delete
+        stable_id: String,
+    },
+    /// Move a node to a different parent
+    Move {
+        /// Document file path
+        file: String,
+        /// Node stable_id to move
+        stable_id: String,
+        /// Target parent stable_id (or "root")
+        #[arg(long)]
+        parent: String,
+        /// Insertion index (0-based, default: append)
+        #[arg(long)]
+        index: Option<usize>,
+    },
+    /// Add a node to a document
+    Add {
+        /// Node kind: frame, group, text, vector, image
+        kind: String,
+        /// Document file path
+        file: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        parent: Option<String>,
+        #[arg(long)]
+        index: Option<usize>,
+        #[arg(long)]
+        width: Option<f32>,
+        #[arg(long)]
+        height: Option<f32>,
+        #[arg(long)]
+        fill: Option<String>,
+        #[arg(long, value_name = "R or TL,TR,BR,BL")]
+        corner_radius: Option<String>,
+        #[arg(long)]
+        clips_content: Option<bool>,
+        #[arg(long)]
+        content: Option<String>,
+        #[arg(long)]
+        font_size: Option<f32>,
+        #[arg(long)]
+        font_family: Option<String>,
+        #[arg(long)]
+        shape: Option<String>,
+        #[arg(long)]
+        sides: Option<u32>,
+        #[arg(long)]
+        src: Option<String>,
     },
 }
 
@@ -245,6 +356,98 @@ fn main() {
             context,
             layer,
         } => commands::cmd_review(&file, context.as_deref(), layer.as_deref()),
+        Command::Set {
+            file,
+            stable_id,
+            name,
+            visible,
+            opacity,
+            blend_mode,
+            x,
+            y,
+            width,
+            height,
+            fill,
+            fill_opacity,
+            stroke,
+            stroke_width,
+            stroke_position,
+            corner_radius,
+            clips_content,
+            layout,
+            padding,
+            gap,
+            content,
+            font_size,
+            font_family,
+            font_weight,
+            text_align,
+            line_height,
+        } => mutate::cmd_set(
+            &file,
+            &stable_id,
+            name.as_deref(),
+            visible,
+            opacity,
+            blend_mode.as_deref(),
+            x,
+            y,
+            width,
+            height,
+            fill.as_deref(),
+            fill_opacity,
+            stroke.as_deref(),
+            stroke_width,
+            stroke_position.as_deref(),
+            corner_radius.as_deref(),
+            clips_content,
+            layout.as_deref(),
+            padding.as_deref(),
+            gap,
+            content.as_deref(),
+            font_size,
+            font_family.as_deref(),
+            font_weight,
+            text_align.as_deref(),
+            line_height.as_deref(),
+        ),
+        Command::Delete { file, stable_id } => mutate::cmd_delete(&file, &stable_id),
+        Command::Move { file, stable_id, parent, index } => mutate::cmd_move(&file, &stable_id, &parent, index),
+        Command::Add {
+            kind,
+            file,
+            name,
+            parent,
+            index,
+            width,
+            height,
+            fill,
+            corner_radius,
+            clips_content,
+            content,
+            font_size,
+            font_family,
+            shape,
+            sides,
+            src,
+        } => mutate::cmd_add(
+            &kind,
+            &file,
+            name.as_deref(),
+            parent.as_deref(),
+            index,
+            width,
+            height,
+            fill.as_deref(),
+            corner_radius.as_deref(),
+            clips_content,
+            content.as_deref(),
+            font_size,
+            font_family.as_deref(),
+            shape.as_deref(),
+            sides,
+            src.as_deref(),
+        ),
     };
 
     std::process::exit(exit_code);

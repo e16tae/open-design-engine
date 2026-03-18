@@ -147,6 +147,40 @@ pub struct GuideLayerInfo {
     pub contexts: Vec<String>,
 }
 
+// ─── Mutation responses ───
+
+#[derive(Serialize)]
+pub struct AddResponse {
+    pub status: &'static str,
+    pub stable_id: String,
+    pub name: String,
+    pub kind: String,
+    pub parent: String,
+}
+
+#[derive(Serialize)]
+pub struct SetResponse {
+    pub status: &'static str,
+    pub stable_id: String,
+    pub modified: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct DeleteResponse {
+    pub status: &'static str,
+    pub deleted: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<Warning>,
+}
+
+#[derive(Serialize)]
+pub struct MoveResponse {
+    pub status: &'static str,
+    pub stable_id: String,
+    pub new_parent: String,
+    pub index: usize,
+}
+
 // ─── Print helpers ───
 
 pub fn print_json<T: Serialize>(value: &T) {

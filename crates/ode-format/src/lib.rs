@@ -4,6 +4,7 @@ pub mod node;
 pub mod style;
 pub mod tokens;
 pub mod typography;
+pub mod shapes;
 pub mod wire;
 
 pub use color::Color;

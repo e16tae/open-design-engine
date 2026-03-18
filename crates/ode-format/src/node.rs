@@ -143,7 +143,7 @@ pub struct ContainerProps {
 }
 
 /// Auto layout configuration for a container (Flexbox-based).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub struct LayoutConfig {
     #[serde(default)]
