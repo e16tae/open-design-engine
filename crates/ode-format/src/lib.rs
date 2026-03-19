@@ -1,5 +1,6 @@
 pub mod color;
 pub mod document;
+pub mod meta;
 pub mod node;
 pub mod style;
 pub mod tokens;
@@ -9,6 +10,7 @@ pub mod wire;
 
 pub use color::Color;
 pub use document::Document;
+pub use meta::Meta;
 pub use node::{
     CounterAxisAlign, FillRule, LayoutConfig, LayoutDirection, LayoutPadding, LayoutSizing,
     LayoutWrap, Node, NodeId, NodeKind, NodeTree, Override, PathSegment, PrimaryAxisAlign,
