@@ -1,5 +1,6 @@
 pub mod asset;
 pub mod color;
+pub mod container;
 pub mod document;
 pub mod meta;
 pub mod node;
@@ -11,6 +12,7 @@ pub mod wire;
 
 pub use asset::{AssetEntry, AssetError, AssetStore};
 pub use color::Color;
+pub use container::{ContainerError, OdeContainer, OdeSource, detect_image_ext};
 pub use document::Document;
 pub use meta::Meta;
 pub use node::{
