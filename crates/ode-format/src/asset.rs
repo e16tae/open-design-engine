@@ -198,4 +198,53 @@ mod tests {
         assert_eq!(hash.len(), 16);
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
     }
+
+    #[test]
+    fn on_disk_lazy_loads_via_get_image() {
+        let data = b"fake-png-data-for-test";
+        let mut tmp = tempfile::NamedTempFile::new().expect("create temp file");
+        std::io::Write::write_all(&mut tmp, data).expect("write temp file");
+
+        let hash = AssetStore::compute_hash(data);
+        let mut store = AssetStore::new();
+        store.register_on_disk(hash.clone(), tmp.path().to_path_buf());
+
+        // Before get_image, get_loaded should return None (still OnDisk)
+        assert!(store.get_loaded(&hash).is_none());
+
+        // get_image should lazy-load from disk
+        let loaded = store.get_image(&hash).expect("lazy load should succeed");
+        assert_eq!(loaded, data);
+
+        // After lazy load, get_loaded should now succeed
+        assert_eq!(store.get_loaded(&hash).unwrap(), data);
+    }
+
+    #[test]
+    fn preload_all_converts_on_disk_to_loaded() {
+        let data_a = b"image-alpha";
+        let data_b = b"image-bravo";
+
+        let mut tmp_a = tempfile::NamedTempFile::new().expect("create temp a");
+        std::io::Write::write_all(&mut tmp_a, data_a).expect("write a");
+        let mut tmp_b = tempfile::NamedTempFile::new().expect("create temp b");
+        std::io::Write::write_all(&mut tmp_b, data_b).expect("write b");
+
+        let hash_a = AssetStore::compute_hash(data_a);
+        let hash_b = AssetStore::compute_hash(data_b);
+
+        let mut store = AssetStore::new();
+        store.register_on_disk(hash_a.clone(), tmp_a.path().to_path_buf());
+        store.register_on_disk(hash_b.clone(), tmp_b.path().to_path_buf());
+
+        // Both should be None via get_loaded before preload
+        assert!(store.get_loaded(&hash_a).is_none());
+        assert!(store.get_loaded(&hash_b).is_none());
+
+        store.preload_all().expect("preload should succeed");
+
+        // After preload, both should be accessible via get_loaded
+        assert_eq!(store.get_loaded(&hash_a).unwrap(), data_a);
+        assert_eq!(store.get_loaded(&hash_b).unwrap(), data_b);
+    }
 }
