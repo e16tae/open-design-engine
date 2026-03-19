@@ -858,7 +858,8 @@ fn extract_embedded_from_strokes(strokes: &mut [crate::style::Stroke], _assets: 
 }
 
 /// Detect image format from magic bytes.
-fn detect_image_ext(data: &[u8]) -> String {
+/// Public for cross-crate use (e.g., ode-import).
+pub fn detect_image_ext(data: &[u8]) -> String {
     if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
         "png".to_string()
     } else if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
@@ -883,7 +884,7 @@ In `crates/ode-format/src/lib.rs`, add:
 
 ```rust
 pub mod container;
-pub use container::{OdeContainer, OdeSource, ContainerError};
+pub use container::{OdeContainer, OdeSource, ContainerError, detect_image_ext};
 ```
 
 - [ ] **Step 6: Run tests to verify they pass**
@@ -1187,21 +1188,36 @@ pub fn from_document_with_resize(
 The `assets` parameter must be threaded through the call chain. Update these function signatures (all in `convert.rs`):
 
 ```rust
-// convert_node — called recursively for each node
+// convert_node (line 86) — called recursively for each node
 fn convert_node(
     doc: &Document,
     node_id: NodeId,
     parent_transform: tiny_skia::Transform,
-    font_db: &FontDatabase,
-    assets: &AssetStore,           // NEW
     commands: &mut Vec<RenderCommand>,
-    layout_rects: &HashMap<NodeId, LayoutRect>,
-)
+    font_db: &FontDatabase,
+    layout_map: &crate::layout::LayoutMap,
+    stable_id_index: &StableIdIndex,
+    assets: &AssetStore,           // NEW — add as last parameter
+) -> Result<(), ConvertError>
 
-// resolve_instance — if it exists and calls emit_image internally
-// Thread `assets` parameter through it as well
+// resolve_instance (line 418) — expands instance nodes, calls convert_node
+#[allow(clippy::too_many_arguments)]
+fn resolve_instance(
+    doc: &Document,
+    instance_node: &Node,
+    inst_data: &ode_format::node::InstanceData,
+    parent_transform: tiny_skia::Transform,
+    layout_rect: Option<&crate::layout::LayoutRect>,
+    commands: &mut Vec<RenderCommand>,
+    font_db: &FontDatabase,
+    layout_map: &crate::layout::LayoutMap,
+    stable_id_index: &StableIdIndex,
+    resolution_stack: &mut Vec<String>,
+    resolution_set: &mut HashSet<String>,
+    assets: &AssetStore,           // NEW — add as last parameter
+) -> Result<(), ConvertError>
 
-// emit_image
+// emit_image (line 321)
 fn emit_image(
     img_data: &ode_format::node::ImageData,
     current_transform: tiny_skia::Transform,
