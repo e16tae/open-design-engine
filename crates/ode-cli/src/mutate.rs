@@ -2,11 +2,12 @@ use crate::output::{
     AddResponse, DeleteResponse, ErrorResponse, MoveResponse, SetResponse, Warning,
     EXIT_INPUT, EXIT_INTERNAL, EXIT_IO, EXIT_OK, print_json,
 };
+use ode_format::container::OdeSource;
 use ode_format::wire::{
     ContainerPropsWire, DocumentWire, FrameDataWire, GroupDataWire, ImageDataWire, NodeKindWire,
     NodeWire, TextDataWire, ViewKindWire,
 };
-use ode_format::{BlendMode, Color, Fill, LayoutDirection, LayoutPadding, Paint, SizingMode, Stroke, StyleValue, VisualProps};
+use ode_format::{BlendMode, Color, Fill, LayoutDirection, LayoutPadding, OdeContainer, Paint, SizingMode, Stroke, StyleValue, VisualProps};
 use ode_format::node::{FillRule, Transform, VectorData};
 use ode_format::style::{ImageSource, StrokeCap, StrokeJoin, StrokePosition};
 use ode_format::typography::{LineHeight, TextAlign, TextSizingMode, TextStyle};
@@ -14,7 +15,51 @@ use ode_format::typography::{LineHeight, TextAlign, TextSizingMode, TextStyle};
 // ─── Shared load/save ───
 
 fn load_wire(file: &str) -> Result<(String, DocumentWire), (i32, ErrorResponse)> {
-    let json = crate::commands::load_input(file)?;
+    let json = match OdeSource::detect(file) {
+        OdeSource::Stdin | OdeSource::LegacyJson(_) => crate::commands::load_input(file)?,
+        OdeSource::Unpacked(dir) => {
+            let doc_path = dir.join("document.json");
+            std::fs::read_to_string(&doc_path).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new(
+                        "IO_ERROR",
+                        "io",
+                        &format!("failed to read document.json from '{}': {e}", dir.display()),
+                    ),
+                )
+            })?
+        }
+        OdeSource::Packed(path) => {
+            let reader = std::fs::File::open(&path).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new("IO_ERROR", "io", &format!("failed to open '{}': {e}", path.display())),
+                )
+            })?;
+            let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new("IO_ERROR", "io", &format!("failed to read ZIP '{}': {e}", path.display())),
+                )
+            })?;
+            let mut entry = archive.by_name("document.json").map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new("IO_ERROR", "io", &format!("document.json not found in '{}': {e}", path.display())),
+                )
+            })?;
+            let mut buf = String::new();
+            use std::io::Read;
+            entry.read_to_string(&mut buf).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new("IO_ERROR", "io", &format!("failed to read document.json: {e}")),
+                )
+            })?;
+            buf
+        }
+    };
     let wire: DocumentWire = serde_json::from_str(&json).map_err(|e| {
         (
             EXIT_INPUT,
@@ -31,12 +76,53 @@ fn save_wire(file: &str, wire: &DocumentWire) -> Result<(), (i32, ErrorResponse)
             ErrorResponse::new("INTERNAL", "serialize", &e.to_string()),
         )
     })?;
-    std::fs::write(file, &json).map_err(|e| {
-        (
-            EXIT_IO,
-            ErrorResponse::new("IO_ERROR", "io", &e.to_string()),
-        )
-    })?;
+
+    match OdeSource::detect(file) {
+        OdeSource::Unpacked(dir) => {
+            let doc_path = dir.join("document.json");
+            std::fs::write(&doc_path, &json).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new(
+                        "IO_ERROR",
+                        "io",
+                        &format!("failed to write document.json to '{}': {e}", dir.display()),
+                    ),
+                )
+            })?;
+        }
+        OdeSource::Packed(_) => {
+            // Open the full container, replace document, re-save as packed
+            let mut container = OdeContainer::open(file).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new("IO_ERROR", "io", &format!("failed to open '{}': {e}", file)),
+                )
+            })?;
+            // Replace the document with our updated wire-format version
+            let doc: ode_format::Document = serde_json::from_str(&json).map_err(|e| {
+                (
+                    EXIT_INTERNAL,
+                    ErrorResponse::new("INTERNAL", "parse", &e.to_string()),
+                )
+            })?;
+            container.document = doc;
+            container.save().map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new("IO_ERROR", "io", &format!("failed to save '{}': {e}", file)),
+                )
+            })?;
+        }
+        OdeSource::LegacyJson(_) | OdeSource::Stdin => {
+            std::fs::write(file, &json).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new("IO_ERROR", "io", &e.to_string()),
+                )
+            })?;
+        }
+    }
     Ok(())
 }
 

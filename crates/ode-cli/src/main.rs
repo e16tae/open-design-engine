@@ -18,7 +18,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Create a new empty .ode.json document
+    /// Create a new empty .ode document
     New {
         /// Output file path
         file: String,
@@ -32,7 +32,7 @@ enum Command {
         #[arg(long, requires = "width")]
         height: Option<f32>,
     },
-    /// Validate an .ode.json document
+    /// Validate an .ode document
     Validate {
         /// Input file (or "-" for stdin)
         file: String,
@@ -73,7 +73,7 @@ enum Command {
         #[arg(long)]
         full: bool,
     },
-    /// Output JSON Schema for the .ode.json format
+    /// Output JSON Schema for the .ode format
     Schema {
         /// Schema topic: document, node, paint, token, color
         topic: Option<String>,
@@ -104,7 +104,7 @@ enum Command {
     },
     /// Review a design against knowledge-based rules
     Review {
-        /// Input file (.ode.json) or - for stdin
+        /// Input file (.ode) or - for stdin
         file: String,
         /// Override context detection
         #[arg(long)]
@@ -238,7 +238,7 @@ enum ImportSource {
         /// Local Figma JSON file (alternative to API)
         #[arg(short, long)]
         input: Option<String>,
-        /// Output .ode.json file path
+        /// Output .ode file path
         #[arg(short, long)]
         output: String,
         /// Include Figma Variables as DesignTokens
@@ -254,12 +254,12 @@ enum ImportSource {
 enum TokenAction {
     /// List all token collections and tokens
     List {
-        /// Input .ode.json file
+        /// Input .ode file
         file: String,
     },
     /// Resolve a token value in the current active mode
     Resolve {
-        /// Input .ode.json file
+        /// Input .ode file
         file: String,
         /// Collection name or ID
         #[arg(long)]
@@ -270,7 +270,7 @@ enum TokenAction {
     },
     /// Set active mode for a collection
     SetMode {
-        /// Input .ode.json file
+        /// Input .ode file
         file: String,
         /// Collection name or ID
         #[arg(long)]

@@ -179,8 +179,69 @@ impl OdeContainer {
     }
 
     /// Open a packed `.ode` ZIP file.
-    pub fn open_packed(_file: &Path) -> Result<Self, ContainerError> {
-        todo!("ZIP support (Task 4)")
+    pub fn open_packed(file: &Path) -> Result<Self, ContainerError> {
+        let reader = std::fs::File::open(file)?;
+        let mut archive =
+            zip::ZipArchive::new(reader).map_err(|e| ContainerError::Zip(e.to_string()))?;
+
+        // Read document.json
+        let document: Document = {
+            let mut entry = archive
+                .by_name("document.json")
+                .map_err(|e| ContainerError::Zip(e.to_string()))?;
+            let mut buf = String::new();
+            entry.read_to_string(&mut buf)?;
+            serde_json::from_str(&buf)?
+        };
+
+        // Read meta.json (optional)
+        let meta: Meta = match archive.by_name("meta.json") {
+            Ok(mut entry) => {
+                let mut buf = String::new();
+                entry.read_to_string(&mut buf)?;
+                serde_json::from_str(&buf)?
+            }
+            Err(_) => Meta::legacy(),
+        };
+
+        // Read assets/*
+        let mut assets = AssetStore::new();
+        let asset_names: Vec<String> = (0..archive.len())
+            .filter_map(|i| {
+                let entry = archive.by_index(i).ok()?;
+                let name = entry.name().to_string();
+                if name.starts_with("assets/") && !entry.is_dir() {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for name in asset_names {
+            let mut entry = archive
+                .by_name(&name)
+                .map_err(|e| ContainerError::Zip(e.to_string()))?;
+            let mut data = Vec::new();
+            entry.read_to_end(&mut data)?;
+
+            // Extract hash from filename: "assets/{hash}.{ext}" -> "{hash}"
+            if let Some(filename) = name.strip_prefix("assets/") {
+                let hash = filename
+                    .rsplit('.')
+                    .last()
+                    .unwrap_or(filename)
+                    .to_string();
+                assets.add_image_with_hash(hash, data);
+            }
+        }
+
+        Ok(Self {
+            document,
+            meta,
+            assets,
+            source: OdeSource::Packed(file.to_path_buf()),
+        })
     }
 
     // ── Save ──
@@ -239,8 +300,62 @@ impl OdeContainer {
     }
 
     /// Save as a packed `.ode` ZIP file.
-    pub fn save_packed(&mut self, _path: &Path) -> Result<(), ContainerError> {
-        todo!("ZIP support (Task 4)")
+    pub fn save_packed(&mut self, path: &Path) -> Result<(), ContainerError> {
+        self.meta.touch();
+        self.extract_embedded_assets();
+
+        // Atomic write: write to temp file first, then rename
+        let tmp_path = path.with_extension("ode.tmp");
+        let file = std::fs::File::create(&tmp_path)?;
+        let mut zip =
+            zip::ZipWriter::new(std::io::BufWriter::new(file));
+        let deflate_opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        let store_opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+
+        // Write document.json
+        let doc_json = serde_json::to_string_pretty(&self.document)?;
+        zip.start_file("document.json", deflate_opts)
+            .map_err(|e| ContainerError::Zip(e.to_string()))?;
+        std::io::Write::write_all(&mut zip, doc_json.as_bytes())?;
+
+        // Write meta.json
+        let meta_json = serde_json::to_string_pretty(&self.meta)?;
+        zip.start_file("meta.json", deflate_opts)
+            .map_err(|e| ContainerError::Zip(e.to_string()))?;
+        std::io::Write::write_all(&mut zip, meta_json.as_bytes())?;
+
+        // Write assets
+        for (hash, entry) in self.assets.iter() {
+            let data = match entry {
+                AssetEntry::Loaded(bytes) => bytes.clone(),
+                AssetEntry::OnDisk(path) => std::fs::read(path)?,
+            };
+            let ext = self.find_asset_ext(hash).unwrap_or_else(|| "bin".to_string());
+            let filename = format!("assets/{hash}.{ext}");
+
+            // Use Store for binary image formats, Deflate for others (e.g. SVG)
+            let opts = match ext.as_str() {
+                "png" | "jpg" | "jpeg" | "webp" | "gif" => store_opts,
+                _ => deflate_opts,
+            };
+
+            zip.start_file(&filename, opts)
+                .map_err(|e| ContainerError::Zip(e.to_string()))?;
+            std::io::Write::write_all(&mut zip, &data)?;
+        }
+
+        // Finish ZIP
+        zip.finish()
+            .map_err(|e| ContainerError::Zip(e.to_string()))?;
+
+        // Atomic rename
+        std::fs::rename(&tmp_path, path)?;
+
+        // Update source
+        self.source = OdeSource::Packed(path.to_path_buf());
+        Ok(())
     }
 
     // ── Asset Extraction ──
@@ -354,6 +469,18 @@ mod tests {
     use crate::document::Document;
     use crate::node::{Node, NodeKind};
     use crate::style::{BlendMode, Fill, ImageFillMode, ImageSource, Paint, StyleValue};
+
+    use tempfile::TempDir;
+
+    /// Helper: create a simple Document for testing.
+    fn make_test_doc() -> Document {
+        use crate::node::Node;
+        let mut doc = Document::new("Test");
+        let frame = Node::new_frame("Frame1", 100.0, 100.0);
+        let id = doc.nodes.insert(frame);
+        doc.canvas.push(id);
+        doc
+    }
 
     #[test]
     fn detect_source_directory() {
@@ -476,5 +603,58 @@ mod tests {
 
         // 3. Asset store should have one entry
         assert_eq!(container.assets.len(), 1);
+    }
+
+    #[test]
+    fn save_and_open_packed() {
+        let dir = TempDir::new().unwrap();
+        let ode_file = dir.path().join("design.ode");
+
+        let doc = make_test_doc();
+        let mut container = OdeContainer::from_document(doc, "ode-test");
+        container.save_packed(&ode_file).unwrap();
+
+        assert!(ode_file.exists());
+
+        // Verify it's a valid ZIP
+        let bytes = std::fs::read(&ode_file).unwrap();
+        assert_eq!(&bytes[..4], &[0x50, 0x4B, 0x03, 0x04]);
+
+        // Re-open
+        let loaded = OdeContainer::open(ode_file.to_str().unwrap()).unwrap();
+        assert_eq!(loaded.document.name, "Test");
+        assert!(matches!(loaded.source, OdeSource::Packed(_)));
+    }
+
+    #[test]
+    fn detect_source_packed_ode() {
+        let dir = TempDir::new().unwrap();
+        let ode_file = dir.path().join("test.ode");
+
+        let doc = make_test_doc();
+        let mut container = OdeContainer::from_document(doc, "ode-test");
+        container.save_packed(&ode_file).unwrap();
+
+        let source = OdeSource::detect(ode_file.to_str().unwrap());
+        assert!(matches!(source, OdeSource::Packed(_)));
+    }
+
+    #[test]
+    fn packed_atomic_write() {
+        let dir = TempDir::new().unwrap();
+        let ode_file = dir.path().join("design.ode");
+
+        // First save
+        let doc = make_test_doc();
+        let mut c1 = OdeContainer::from_document(doc, "ode-test");
+        c1.save_packed(&ode_file).unwrap();
+
+        // Overwrite
+        let doc2 = Document::new("Updated");
+        let mut c2 = OdeContainer::from_document(doc2, "ode-test");
+        c2.save_packed(&ode_file).unwrap();
+
+        let loaded = OdeContainer::open(ode_file.to_str().unwrap()).unwrap();
+        assert_eq!(loaded.document.name, "Updated");
     }
 }
