@@ -13,3 +13,4 @@ nanoid = { workspace = true }
 slotmap = { workspace = true }
 thiserror = { workspace = true }
 schemars = { workspace = true }
+sha2 = "0.10"

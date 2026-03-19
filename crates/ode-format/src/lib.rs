@@ -1,3 +1,4 @@
+pub mod asset;
 pub mod color;
 pub mod document;
 pub mod meta;
@@ -8,6 +9,7 @@ pub mod typography;
 pub mod shapes;
 pub mod wire;
 
+pub use asset::{AssetEntry, AssetError, AssetStore};
 pub use color::Color;
 pub use document::Document;
 pub use meta::Meta;
