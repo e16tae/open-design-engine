@@ -211,6 +211,70 @@ fn backward_compat_text_data_without_new_fields() {
 }
 
 #[test]
+fn process_text_cjk_produces_glyphs() {
+    let db = system_font_db();
+    if db.is_empty() || !cfg!(target_os = "macos") {
+        eprintln!("Skipping test: requires macOS with system fonts");
+        return;
+    }
+
+    let data = TextData {
+        visual: VisualProps::default(),
+        content: "AI가 만든 카드입니다".to_string(),
+        runs: Vec::new(),
+        default_style: TextStyle::default(),
+        width: 400.0,
+        height: 50.0,
+        sizing_mode: TextSizingMode::Fixed,
+    };
+
+    let result = ode_text::process_text(&data, &db).unwrap();
+    // All characters (including Korean) should produce glyphs
+    assert!(
+        !result.glyphs.is_empty(),
+        "CJK text should produce glyph outlines with font fallback"
+    );
+    // "AI가 만든 카드입니다" has 12 chars (including spaces), but space has no outline.
+    // At minimum, we should have glyphs for all non-space chars.
+    assert!(
+        result.glyphs.len() >= 8,
+        "Expected at least 8 glyph outlines for Korean text, got {}",
+        result.glyphs.len()
+    );
+}
+
+#[test]
+fn process_text_mixed_latin_cjk() {
+    let db = system_font_db();
+    if db.is_empty() || !cfg!(target_os = "macos") {
+        eprintln!("Skipping test: requires macOS with system fonts");
+        return;
+    }
+
+    let data = TextData {
+        visual: VisualProps::default(),
+        content: "Hello 세계".to_string(),
+        runs: Vec::new(),
+        default_style: TextStyle::default(),
+        width: 200.0,
+        height: 50.0,
+        sizing_mode: TextSizingMode::Fixed,
+    };
+
+    let result = ode_text::process_text(&data, &db).unwrap();
+    assert!(
+        !result.glyphs.is_empty(),
+        "Mixed Latin+CJK text should produce glyph outlines"
+    );
+    // "Hello" = 5 glyphs + space (no outline) + "세계" = 2 glyphs = at least 7
+    assert!(
+        result.glyphs.len() >= 7,
+        "Expected at least 7 glyphs for 'Hello 세계', got {}",
+        result.glyphs.len()
+    );
+}
+
+#[test]
 fn font_db_add_and_find() {
     let mut db = FontDatabase::new();
     assert!(db.is_empty());

@@ -21,6 +21,56 @@ struct FontEntry {
     data: Arc<Vec<u8>>,
 }
 
+/// CJK font families to try first when looking for fallback fonts.
+/// Ordered by platform prevalence: macOS → cross-platform → other.
+const CJK_FALLBACK_FAMILIES: &[&str] = &[
+    "applesdgothicneo",
+    "apple sd gothic neo",
+    "noto sans cjk kr",
+    "pingfang sc",
+    "hiragino sans",
+    "noto sans cjk sc",
+    "noto sans cjk jp",
+    "malgun gothic",
+    "microsoft yahei",
+];
+
+/// Check whether a codepoint falls in a CJK range (Hangul, CJK Unified, etc.).
+fn is_cjk_codepoint(ch: char) -> bool {
+    let c = ch as u32;
+    // Hangul Jamo
+    (0x1100..=0x11FF).contains(&c)
+    // CJK Radicals Supplement, Kangxi Radicals
+    || (0x2E80..=0x2FFF).contains(&c)
+    // CJK Symbols and Punctuation, Hiragana, Katakana, Bopomofo, Hangul Compat Jamo
+    || (0x3000..=0x31FF).contains(&c)
+    // CJK Unified Ideographs Extension A
+    || (0x3400..=0x4DBF).contains(&c)
+    // CJK Unified Ideographs
+    || (0x4E00..=0x9FFF).contains(&c)
+    // Hangul Syllables
+    || (0xAC00..=0xD7AF).contains(&c)
+    // Hangul Jamo Extended-A/B
+    || (0xA960..=0xA97F).contains(&c)
+    || (0xD7B0..=0xD7FF).contains(&c)
+    // CJK Compatibility Ideographs
+    || (0xF900..=0xFAFF).contains(&c)
+    // Halfwidth and Fullwidth Forms
+    || (0xFF00..=0xFFEF).contains(&c)
+    // CJK Unified Ideographs Extension B-F
+    || (0x20000..=0x2FA1F).contains(&c)
+}
+
+/// Check whether a font's cmap contains a glyph for the given character.
+pub fn font_has_char(font_data: &[u8], ch: char) -> bool {
+    use skrifa::MetadataProvider;
+    let Ok(font) = FontRef::new(font_data) else {
+        return false;
+    };
+    let charmap = font.charmap();
+    charmap.map(ch).is_some()
+}
+
 impl FontDatabase {
     /// Create an empty font database.
     pub fn new() -> Self {
@@ -77,6 +127,33 @@ impl FontDatabase {
         // Fall back to any available font
         if let Some(entry) = self.fonts.first() {
             return Some(Arc::clone(&entry.data));
+        }
+
+        None
+    }
+
+    /// Find a fallback font that can render the given character.
+    ///
+    /// For CJK codepoints, tries well-known CJK families first (AppleSDGothicNeo, etc.)
+    /// then falls back to scanning all loaded fonts.
+    pub fn find_fallback_for_char(&self, ch: char, weight: u16) -> Option<Arc<Vec<u8>>> {
+        // For CJK characters, prioritize known CJK families
+        if is_cjk_codepoint(ch) {
+            for &family in CJK_FALLBACK_FAMILIES {
+                if let Some(indices) = self.family_index.get(family) {
+                    let data = find_closest_weight(&self.fonts, indices, weight);
+                    if font_has_char(&data, ch) {
+                        return Some(data);
+                    }
+                }
+            }
+        }
+
+        // Scan all loaded fonts
+        for entry in &self.fonts {
+            if font_has_char(&entry.data, ch) {
+                return Some(Arc::clone(&entry.data));
+            }
         }
 
         None
@@ -209,6 +286,61 @@ mod tests {
                 !db.is_empty(),
                 "System font database should not be empty on macOS"
             );
+        }
+    }
+
+    #[test]
+    fn is_cjk_detects_hangul() {
+        assert!(is_cjk_codepoint('가')); // U+AC00 Hangul Syllables
+        assert!(is_cjk_codepoint('힣')); // U+D7A3
+        assert!(is_cjk_codepoint('中')); // U+4E2D CJK Unified
+        assert!(!is_cjk_codepoint('A'));
+        assert!(!is_cjk_codepoint(' '));
+    }
+
+    #[test]
+    fn font_has_char_ascii() {
+        let db = FontDatabase::new_system();
+        if db.is_empty() {
+            return;
+        }
+        // Any system font should have 'A'
+        let font = db.find_font("Helvetica", 400).unwrap();
+        assert!(font_has_char(&font, 'A'));
+    }
+
+    #[test]
+    fn font_has_char_hangul_in_helvetica() {
+        let db = FontDatabase::new_system();
+        if db.is_empty() {
+            return;
+        }
+        if let Some(font) = db.find_font("Helvetica", 400) {
+            // Helvetica should NOT have Korean glyphs
+            assert!(
+                !font_has_char(&font, '가'),
+                "Helvetica should not have Hangul glyphs"
+            );
+        }
+    }
+
+    #[test]
+    fn find_fallback_for_hangul() {
+        let db = FontDatabase::new_system();
+        if db.is_empty() {
+            return;
+        }
+        // On macOS, there should be a CJK fallback font
+        if cfg!(target_os = "macos") {
+            let fallback = db.find_fallback_for_char('가', 400);
+            assert!(
+                fallback.is_some(),
+                "Should find a fallback font for Hangul on macOS"
+            );
+            // Verify the fallback actually has the character
+            if let Some(ref data) = fallback {
+                assert!(font_has_char(data, '가'));
+            }
         }
     }
 }
