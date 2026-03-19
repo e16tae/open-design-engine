@@ -186,6 +186,7 @@ impl Renderer {
                         blur_radius,
                         spread,
                         shape,
+                        transform,
                     } => {
                         if let Some(skia_shape) = path::bezpath_to_skia(shape) {
                             if let Some(shadow) = effects::render_drop_shadow(
@@ -195,6 +196,7 @@ impl Renderer {
                                 *offset_y,
                                 *blur_radius,
                                 *spread,
+                                *transform,
                                 w,
                                 h,
                             ) {
@@ -232,6 +234,7 @@ impl Renderer {
                         blur_radius,
                         spread,
                         shape,
+                        transform,
                     } => {
                         if let Some(skia_shape) = path::bezpath_to_skia(shape) {
                             if let Some(shadow) = effects::render_inner_shadow(
@@ -241,6 +244,7 @@ impl Renderer {
                                 *offset_y,
                                 *blur_radius,
                                 *spread,
+                                *transform,
                                 w,
                                 h,
                             ) {
@@ -460,5 +464,154 @@ mod tests {
             commands: vec![],
         };
         assert!(Renderer::render(&scene).is_err());
+    }
+
+    #[test]
+    fn drop_shadow_follows_node_transform() {
+        // A 20×20 rect at local origin, translated to x=60 via transform.
+        // The drop shadow (no offset, no blur) should appear at x≈60, not x≈0.
+        let mut bp = kurbo::BezPath::new();
+        bp.move_to((0.0, 0.0));
+        bp.line_to((20.0, 0.0));
+        bp.line_to((20.0, 20.0));
+        bp.line_to((0.0, 20.0));
+        bp.close_path();
+
+        let node_transform = tiny_skia::Transform::from_translate(60.0, 10.0);
+
+        let scene = Scene {
+            width: 100.0,
+            height: 50.0,
+            commands: vec![
+                RenderCommand::PushLayer {
+                    opacity: 1.0,
+                    blend_mode: BlendMode::Normal,
+                    clip: None,
+                    transform: tiny_skia::Transform::identity(),
+                },
+                // Shadow rendered BEHIND content
+                RenderCommand::ApplyEffect {
+                    effect: ResolvedEffect::DropShadow {
+                        color: Color::Srgb {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        },
+                        offset_x: 0.0,
+                        offset_y: 0.0,
+                        blur_radius: 0.0,
+                        spread: 0.0,
+                        shape: bp.clone(),
+                        transform: node_transform,
+                    },
+                },
+                // Fill the rect at the same transform
+                RenderCommand::FillPath {
+                    path: bp,
+                    paint: ResolvedPaint::Solid(Color::Srgb {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                    fill_rule: FillRule::NonZero,
+                    transform: node_transform,
+                },
+                RenderCommand::PopLayer,
+            ],
+        };
+
+        let pixmap = Renderer::render(&scene).unwrap();
+
+        // The shadow (black) should be at x=60..80, y=10..30
+        let shadow_pixel = pixmap.pixel(70, 20).unwrap();
+        assert!(
+            shadow_pixel.alpha() > 200,
+            "Shadow should be visible at x=70, y=20 (translated position), got alpha={}",
+            shadow_pixel.alpha()
+        );
+
+        // The area at x=10, y=20 (near origin) should be transparent — no shadow there
+        let origin_pixel = pixmap.pixel(10, 20).unwrap();
+        assert_eq!(
+            origin_pixel.alpha(),
+            0,
+            "Shadow should NOT be at x=10 (origin); transform moves it to x=60"
+        );
+    }
+
+    #[test]
+    fn inner_shadow_follows_node_transform() {
+        // Similar test for InnerShadow: a 30×30 rect translated to x=50.
+        let mut bp = kurbo::BezPath::new();
+        bp.move_to((0.0, 0.0));
+        bp.line_to((30.0, 0.0));
+        bp.line_to((30.0, 30.0));
+        bp.line_to((0.0, 30.0));
+        bp.close_path();
+
+        let node_transform = tiny_skia::Transform::from_translate(50.0, 5.0);
+
+        let scene = Scene {
+            width: 100.0,
+            height: 50.0,
+            commands: vec![
+                RenderCommand::PushLayer {
+                    opacity: 1.0,
+                    blend_mode: BlendMode::Normal,
+                    clip: None,
+                    transform: tiny_skia::Transform::identity(),
+                },
+                // Fill rect at transformed position first
+                RenderCommand::FillPath {
+                    path: bp.clone(),
+                    paint: ResolvedPaint::Solid(Color::Srgb {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    }),
+                    fill_rule: FillRule::NonZero,
+                    transform: node_transform,
+                },
+                // Inner shadow rendered ON content
+                RenderCommand::ApplyEffect {
+                    effect: ResolvedEffect::InnerShadow {
+                        color: Color::Srgb {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        },
+                        offset_x: 5.0,
+                        offset_y: 5.0,
+                        blur_radius: 0.0,
+                        spread: 0.0,
+                        shape: bp,
+                        transform: node_transform,
+                    },
+                },
+                RenderCommand::PopLayer,
+            ],
+        };
+
+        let pixmap = Renderer::render(&scene).unwrap();
+
+        // The rect is at x=50..80, y=5..35. Content should be visible there.
+        let content_pixel = pixmap.pixel(65, 20).unwrap();
+        assert!(
+            content_pixel.alpha() > 200,
+            "Content should be visible at transformed position, got alpha={}",
+            content_pixel.alpha()
+        );
+
+        // Origin area should be transparent
+        let origin_pixel = pixmap.pixel(10, 20).unwrap();
+        assert_eq!(
+            origin_pixel.alpha(),
+            0,
+            "Nothing should be at x=10 (origin); inner shadow should follow transform"
+        );
     }
 }

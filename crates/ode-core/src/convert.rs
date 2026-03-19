@@ -229,6 +229,7 @@ fn emit_visual(
                         blur_radius: resolve_f32(blur, tokens),
                         spread: resolve_f32(spread, tokens),
                         shape: bp.clone(),
+                        transform: current_transform,
                     },
                 });
             }
@@ -292,6 +293,7 @@ fn emit_visual(
                             blur_radius: resolve_f32(blur, tokens),
                             spread: resolve_f32(spread, tokens),
                             shape: bp.clone(),
+                            transform: current_transform,
                         },
                     });
                 }
@@ -783,6 +785,7 @@ fn convert_text_node(
                     blur_radius: resolve_f32(blur, tokens),
                     spread: resolve_f32(spread, tokens),
                     shape: bbox.clone(),
+                    transform: current_transform,
                 },
             });
         }
@@ -825,6 +828,7 @@ fn convert_text_node(
                         blur_radius: resolve_f32(blur, tokens),
                         spread: resolve_f32(spread, tokens),
                         shape: bbox.clone(),
+                        transform: current_transform,
                     },
                 });
             }

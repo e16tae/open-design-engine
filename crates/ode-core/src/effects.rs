@@ -156,6 +156,9 @@ fn apply_spread(path: &tiny_skia::Path, spread: f32) -> Option<tiny_skia::Path> 
 }
 
 /// Render a drop shadow effect. Returns a pixmap with the shadow to composite UNDER content.
+///
+/// `node_transform` is the node's world transform, which positions the local-coordinate
+/// shape into the full-size pixmap. The offset is applied on top of this transform.
 #[allow(clippy::too_many_arguments)]
 pub fn render_drop_shadow(
     content_path: &tiny_skia::Path,
@@ -164,6 +167,7 @@ pub fn render_drop_shadow(
     offset_y: f32,
     blur_radius: f32,
     spread: f32,
+    node_transform: tiny_skia::Transform,
     width: u32,
     height: u32,
 ) -> Option<tiny_skia::Pixmap> {
@@ -173,8 +177,9 @@ pub fn render_drop_shadow(
     let mut paint = tiny_skia::Paint::default();
     paint.shader = tiny_skia::Shader::SolidColor(crate::paint::color_to_skia(color));
     paint.anti_alias = true;
-    let transform = tiny_skia::Transform::from_translate(offset_x, offset_y);
-    shadow.fill_path(path, &paint, tiny_skia::FillRule::Winding, transform, None);
+    let offset_transform = tiny_skia::Transform::from_translate(offset_x, offset_y);
+    let combined = node_transform.post_concat(offset_transform);
+    shadow.fill_path(path, &paint, tiny_skia::FillRule::Winding, combined, None);
     if blur_radius > 0.0 {
         gaussian_blur(&mut shadow, blur_radius);
     }
@@ -183,6 +188,9 @@ pub fn render_drop_shadow(
 
 /// Render an inner shadow effect. Returns a pixmap to composite OVER content.
 /// Spread contracts the cutout shape (making the shadow thicker around edges).
+///
+/// `node_transform` is the node's world transform, which positions the local-coordinate
+/// shape into the full-size pixmap. The offset is applied on top of this transform.
 #[allow(clippy::too_many_arguments)]
 pub fn render_inner_shadow(
     content_path: &tiny_skia::Path,
@@ -191,6 +199,7 @@ pub fn render_inner_shadow(
     offset_y: f32,
     blur_radius: f32,
     spread: f32,
+    node_transform: tiny_skia::Transform,
     width: u32,
     height: u32,
 ) -> Option<tiny_skia::Pixmap> {
@@ -204,23 +213,25 @@ pub fn render_inner_shadow(
         anti_alias: true,
         ..Default::default()
     };
-    let transform = tiny_skia::Transform::from_translate(offset_x, offset_y);
+    let offset_transform = tiny_skia::Transform::from_translate(offset_x, offset_y);
+    let combined = node_transform.post_concat(offset_transform);
     shadow.fill_path(
         cutout,
         &cutout_paint,
         tiny_skia::FillRule::Winding,
-        transform,
+        combined,
         None,
     );
     if blur_radius > 0.0 {
         gaussian_blur(&mut shadow, blur_radius);
     }
+    // Mask to the original shape (transformed to world coords)
     if let Some(mut mask) = tiny_skia::Mask::new(width, height) {
         mask.fill_path(
             content_path,
             tiny_skia::FillRule::Winding,
             true,
-            tiny_skia::Transform::identity(),
+            node_transform,
         );
         let mut clipped = tiny_skia::Pixmap::new(width, height)?;
         let paint = tiny_skia::PixmapPaint {

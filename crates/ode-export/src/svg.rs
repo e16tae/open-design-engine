@@ -930,6 +930,7 @@ mod tests {
                         blur_radius: 8.0,
                         spread: 0.0,
                         shape: make_rect_path(100.0, 100.0),
+                        transform: tiny_skia::Transform::identity(),
                     },
                 },
                 RenderCommand::FillPath {
@@ -967,6 +968,7 @@ mod tests {
                         blur_radius: 4.0,
                         spread: 0.0,
                         shape: make_rect_path(100.0, 100.0),
+                        transform: tiny_skia::Transform::identity(),
                     },
                 },
                 RenderCommand::FillPath {
