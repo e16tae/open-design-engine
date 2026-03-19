@@ -34,7 +34,7 @@ design.ode (ZIP)
     └── f7e8d9c0b1a2.jpg
 ```
 
-- ZIP 압축 방식: `document.json`과 `meta.json`은 **Deflate**, `assets/` 내 이미지는 **Store** (이미 압축된 포맷이므로 재압축 불필요)
+- ZIP 압축 방식: `document.json`과 `meta.json`은 **Deflate**, `assets/` 내 이미지는 **Store** (PNG/JPEG/WebP 등 이미 압축된 포맷). SVG, BMP 등 비압축 에셋은 Deflate 적용.
 - ZIP 내 경로는 항상 `/` 구분자, 루트에 `document.json` 위치
 
 ### 1.2 풀린 디렉토리 레이아웃 (Unpacked)
@@ -80,7 +80,10 @@ design/
 ```
 
 - 경로는 항상 **상대 경로** (ZIP 루트 또는 풀린 디렉토리 기준)
-- 파일명은 **SHA-256 앞 12자리 hex** + 원본 확장자 — 동일 이미지 중복 방지
+- 파일명은 **SHA-256 앞 16자리 hex** (64-bit) + 원본 확장자 — 동일 이미지 중복 방지
+  - 예: `SHA-256(bytes) = a1b2c3d4e5f67890abcd...` → `a1b2c3d4e5f67890.png`
+  - 해시 충돌 시: `add_image()`가 기존 에셋과 바이트 비교, 불일치하면 suffix 추가 (`_2`)
+  - 동일 콘텐츠의 동일 해시는 중복 제거 (dedup) — 에셋 하나만 저장
 
 ### 1.5 `ImageSource::Embedded` 처리
 
@@ -124,6 +127,8 @@ ode unpack design.ode --output design/   # .ode → 디렉토리
 ode pack design/        → design.ode   (같은 위치)
 ode unpack design.ode   → design/      (같은 위치)
 ```
+
+출력 대상이 이미 존재하면 덮어쓰기 (기본 동작). 에이전트 워크플로우에서 반복 pack/unpack이 자연스러워야 하므로 별도 `--force` 플래그 없이 덮어쓴다.
 
 ### 2.3 `ode new` 변경
 
@@ -178,16 +183,17 @@ pub struct OdeContainer {
 
 impl OdeContainer {
     /// 경로에서 자동 판별하여 열기
-    pub fn open(path: &str) -> Result<Self, ContainerError>;
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, ContainerError>;
 
     /// 원래 소스에 저장 (Packed → ZIP, Unpacked → 디렉토리)
-    pub fn save(&self) -> Result<(), ContainerError>;
+    /// Stdin 소스일 경우 에러 반환 (save_packed/save_unpacked 사용 필요)
+    pub fn save(&mut self) -> Result<(), ContainerError>;
 
     /// 지정 경로에 Packed(.ode)로 저장
-    pub fn save_packed(&self, path: &Path) -> Result<(), ContainerError>;
+    pub fn save_packed(&mut self, path: &Path) -> Result<(), ContainerError>;
 
     /// 지정 경로에 Unpacked(디렉토리)로 저장
-    pub fn save_unpacked(&self, path: &Path) -> Result<(), ContainerError>;
+    pub fn save_unpacked(&mut self, path: &Path) -> Result<(), ContainerError>;
 }
 ```
 
@@ -237,7 +243,10 @@ impl Meta {
 ```
 Document (메모리)
   │
-  ├─ 노드 순회 → Embedded 이미지 발견
+  ├─ 모든 노드 순회 → Embedded 이미지 추출
+  │   ├─ ImageData.source (이미지 노드)
+  │   └─ Paint::ImageFill { source } (모든 노드의 fills/strokes)
+  │   각각에 대해:
   │   ├─ SHA-256 해시 계산 → 해시 파일명 생성
   │   ├─ AssetStore.add_image(bytes, ext)
   │   └─ Embedded → Linked { path: "assets/{hash}.{ext}" } 교체
@@ -247,9 +256,11 @@ Document (메모리)
   ├─ meta.json 직렬화
   │
   └─ OdeSource에 따라:
-      ├─ Packed → ZIP 쓰기
+      ├─ Packed → 임시 파일에 ZIP 쓰기 → rename (원자적 교체)
       └─ Unpacked → 파일 쓰기
 ```
+
+**원자적 저장 (Packed 모드)**: ZIP을 같은 디렉토리의 임시 파일에 쓴 뒤 `rename()`으로 교체한다. 쓰기 중 크래시 시 원본 `.ode` 파일이 손상되지 않는다.
 
 ### 3.5 로드 흐름
 
@@ -260,8 +271,9 @@ Document (메모리)
   │
   ├─ Packed → ZIP에서 document.json, meta.json 추출
   ├─ Unpacked → 디렉토리에서 직접 읽기
-  ├─ LegacyJson → JSON 파싱 (meta 자동 생성)
-  ├─ Stdin → JSON 파싱 (에셋 없음)
+  ├─ LegacyJson → JSON 파싱 (meta 자동 생성: format_version "1.0.0",
+  │                generator "ode-format (legacy)", timestamps from file mtime)
+  ├─ Stdin → JSON 파싱 (에셋 없음, meta 자동 생성)
   │
   ├─ document.json → Document 역직렬화
   ├─ meta.json → Meta 역직렬화
@@ -275,7 +287,7 @@ Document (메모리)
 | 크레이트 | 변경 내용 |
 |---------|----------|
 | `ode-format` | `container.rs` 추가 (`OdeContainer`, `AssetStore`, `Meta`). `ImageSource::Embedded` 유지 |
-| `ode-core` | 렌더 시 `AssetStore`에서 이미지 바이트 가져오도록 변경. `convert.rs`의 이미지 로드 경로 수정 |
+| `ode-core` | `Scene::from_document(&doc, &font_db, &asset_store)` — 새 매개변수 추가. `convert.rs`의 `emit_image()`가 `AssetStore::get_image()`로 바이트 조회. 기존 `std::fs::read(path)` 직접 호출 제거 |
 | `ode-cli` | `load_input()` → `OdeContainer::open()` 교체. `pack`/`unpack` 명령 추가. 도움말 문자열 업데이트 |
 | `ode-import` | Figma 이미지 → `AssetStore::add_image()` 사용. `Embedded` 직접 생성 대신 `AssetStore` 경유 |
 | `ode-export` | 변경 없음 (Scene IR만 받음) |
@@ -352,7 +364,7 @@ ode pack design/                              # → design.ode
 | 노드 추가/삭제/이동 | O | O |
 | 스타일 변경 | O | O |
 | 복잡한 구조 변경 (여러 노드 동시) | △ | O |
-| 이미지 추가 | O | △ |
+| 이미지 추가 | O | △ (에셋 파일 복사 + JSON에 Linked 참조 추가 필요) |
 | 검증/렌더링 | O | X |
 
 ### 6.4 ZIP 모드 직접 작업
