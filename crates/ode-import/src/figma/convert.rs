@@ -5,13 +5,15 @@
 
 use std::collections::HashMap;
 
+use ode_format::asset::AssetStore;
+use ode_format::container::detect_image_ext;
 use ode_format::document::{Document, Version, WorkingColorSpace};
 use ode_format::node::{
     BooleanOpData, BooleanOperation, ComponentDef, ContainerProps, FillRule, FrameData, GroupData,
     ImageData, InstanceData, Node, NodeId, NodeKind, NodeTree, PathSegment, SizingMode, StableId,
     TextData, VectorData, VectorPath,
 };
-use ode_format::style::{BlendMode, ImageSource, VisualProps};
+use ode_format::style::{BlendMode, ImageSource, Paint, VisualProps};
 use ode_format::tokens::DesignTokens;
 use ode_format::typography::TextSizingMode;
 
@@ -31,6 +33,7 @@ use crate::error::{ImportError, ImportWarning};
 #[derive(Debug)]
 pub struct ImportResult {
     pub document: Document,
+    pub asset_store: AssetStore,
     pub warnings: Vec<ImportWarning>,
 }
 
@@ -93,6 +96,7 @@ impl FigmaConverter {
 
         Ok(ImportResult {
             document,
+            asset_store: ctx.asset_store,
             warnings: ctx.warnings,
         })
     }
@@ -108,9 +112,10 @@ struct ConvertContext<'a> {
     component_map: HashMap<String, StableId>,
     /// Top-level component metadata from the file response.
     components_meta: &'a HashMap<String, super::types::FigmaComponentMeta>,
-    /// Pre-fetched rasterized image data (unused in this pass but reserved).
-    #[allow(dead_code)]
+    /// Pre-fetched rasterized image data keyed by Figma image ref.
     images: HashMap<String, Vec<u8>>,
+    /// Asset store for image deduplication and linked storage.
+    asset_store: AssetStore,
     /// Figma variable ID → ODE (CollectionId, TokenId) for boundVariables resolution.
     variable_map: super::convert_style::VariableMap,
     /// Accumulated warnings.
@@ -124,6 +129,7 @@ impl<'a> ConvertContext<'a> {
             component_map: HashMap::new(),
             components_meta: &file.components,
             images,
+            asset_store: AssetStore::new(),
             variable_map: HashMap::new(),
             warnings: Vec::new(),
         }
@@ -517,11 +523,14 @@ impl<'a> ConvertContext<'a> {
         let fill = &fills[0];
 
         // Extract image source from the Figma paint's image_ref.
-        // If we have pre-fetched image data for this ref, embed it;
-        // otherwise, store as a Linked reference.
+        // If we have pre-fetched image data for this ref, store it in the
+        // asset store and use a Linked reference; otherwise, use the raw
+        // image_ref as a fallback Linked path.
         let source = fill.image_ref.as_ref().map(|image_ref| {
             if let Some(data) = self.images.get(image_ref) {
-                ImageSource::Embedded { data: data.clone() }
+                let ext = detect_image_ext(data);
+                let path = self.asset_store.add_image(data.clone(), ext);
+                ImageSource::Linked { path }
             } else {
                 ImageSource::Linked {
                     path: image_ref.clone(),
@@ -545,7 +554,7 @@ impl<'a> ConvertContext<'a> {
 
     fn convert_visual_props(&mut self, fnode: &FigmaNode) -> VisualProps {
         let var_map = &self.variable_map;
-        let fills = fnode.fills.as_ref().map_or(Vec::new(), |fills| {
+        let mut fills = fnode.fills.as_ref().map_or(Vec::new(), |fills| {
             fills
                 .iter()
                 .filter_map(|f| convert_fill(f, var_map, &mut self.warnings))
@@ -575,6 +584,20 @@ impl<'a> ConvertContext<'a> {
                 .filter_map(|e| convert_effect(e, var_map, &mut self.warnings))
                 .collect()
         });
+
+        // Route image fill sources through the asset store when we have
+        // pre-fetched data for the referenced image.
+        for fill in &mut fills {
+            if let Paint::ImageFill { source, .. } = &mut fill.paint {
+                if let ImageSource::Linked { path } = source {
+                    if let Some(data) = self.images.get(path.as_str()) {
+                        let ext = detect_image_ext(data);
+                        let asset_path = self.asset_store.add_image(data.clone(), ext);
+                        *path = asset_path;
+                    }
+                }
+            }
+        }
 
         VisualProps {
             fills,
@@ -1250,7 +1273,7 @@ mod tests {
     }
 
     #[test]
-    fn image_promotion_with_prefetched_data_produces_embedded() {
+    fn image_promotion_with_prefetched_data_produces_linked_via_asset_store() {
         let paint = FigmaPaint {
             paint_type: "IMAGE".to_string(),
             image_ref: Some("img_fetched".to_string()),
@@ -1277,8 +1300,13 @@ mod tests {
         };
         let file = make_file("Test", vec![frame]);
         let mut images = HashMap::new();
-        images.insert("img_fetched".to_string(), vec![0x89, 0x50, 0x4E, 0x47]);
+        let image_data = vec![0x89, 0x50, 0x4E, 0x47];
+        images.insert("img_fetched".to_string(), image_data.clone());
         let result = FigmaConverter::convert(file, None, images).unwrap();
+
+        // The image should be stored in the asset store
+        assert_eq!(result.asset_store.len(), 1);
+
         let frame_id = result.document.canvas[0];
         let frame_node = &result.document.nodes[frame_id];
         if let NodeKind::Frame(ref data) = frame_node.kind {
@@ -1286,10 +1314,11 @@ mod tests {
             let img_node = &result.document.nodes[img_id];
             if let NodeKind::Image(ref img_data) = img_node.kind {
                 match &img_data.source {
-                    Some(ode_format::style::ImageSource::Embedded { data }) => {
-                        assert_eq!(data, &[0x89, 0x50, 0x4E, 0x47]);
+                    Some(ode_format::style::ImageSource::Linked { path }) => {
+                        // Path should be an asset store path like "assets/{hash}.{ext}"
+                        assert!(path.starts_with("assets/"), "Expected assets/ path, got {path}");
                     }
-                    other => panic!("Expected Embedded source, got {:?}", other),
+                    other => panic!("Expected Linked source via asset store, got {:?}", other),
                 }
             } else {
                 panic!("Expected Image node");

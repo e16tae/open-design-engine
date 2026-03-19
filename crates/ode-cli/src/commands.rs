@@ -6,7 +6,7 @@ use ode_format::asset::AssetStore;
 use ode_format::container::{ContainerError, OdeContainer, OdeSource};
 use ode_format::Document;
 use ode_format::wire::DocumentWire;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 enum ExportFormat {
     Png,
@@ -643,6 +643,7 @@ pub fn cmd_import_figma(
 
     // Save output using OdeContainer
     let mut container = OdeContainer::from_document(result.document, "ode-cli");
+    container.assets = result.asset_store;
     let path = Path::new(output);
 
     let save_result = if output.ends_with('/') || path.is_dir() {
@@ -1389,6 +1390,62 @@ pub fn cmd_review(file: &str, context: Option<&str>, layer: Option<&str>) -> i32
         warnings: vec![],
     };
     print_json(&response);
+    EXIT_OK
+}
+
+// ─── ode pack ───
+
+pub fn cmd_pack(input: &str, output: Option<&str>) -> i32 {
+    let out_path = output
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let p = Path::new(input);
+            let name = p.file_name().unwrap_or_default().to_string_lossy();
+            p.parent().unwrap_or(Path::new(".")).join(format!("{name}.ode"))
+        });
+
+    let mut container = match OdeContainer::open(input) {
+        Ok(c) => c,
+        Err(e) => {
+            print_json(&ErrorResponse::new("OPEN_FAILED", "io", &e.to_string()));
+            return EXIT_IO;
+        }
+    };
+
+    if let Err(e) = container.save_packed(&out_path) {
+        print_json(&ErrorResponse::new("PACK_FAILED", "io", &e.to_string()));
+        return EXIT_PROCESS;
+    }
+
+    print_json(&OkResponse::with_path(out_path.to_str().unwrap_or("")));
+    EXIT_OK
+}
+
+// ─── ode unpack ───
+
+pub fn cmd_unpack(input: &str, output: Option<&str>) -> i32 {
+    let out_path = output
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let p = Path::new(input);
+            let stem = p.file_stem().unwrap_or_default().to_string_lossy();
+            p.parent().unwrap_or(Path::new(".")).join(stem.as_ref())
+        });
+
+    let mut container = match OdeContainer::open(input) {
+        Ok(c) => c,
+        Err(e) => {
+            print_json(&ErrorResponse::new("OPEN_FAILED", "io", &e.to_string()));
+            return EXIT_IO;
+        }
+    };
+
+    if let Err(e) = container.save_unpacked(&out_path) {
+        print_json(&ErrorResponse::new("UNPACK_FAILED", "io", &e.to_string()));
+        return EXIT_PROCESS;
+    }
+
+    print_json(&OkResponse::with_path(out_path.to_str().unwrap_or("")));
     EXIT_OK
 }
 

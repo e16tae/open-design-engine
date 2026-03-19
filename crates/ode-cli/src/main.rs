@@ -188,6 +188,22 @@ enum Command {
         #[arg(long)]
         index: Option<usize>,
     },
+    /// Pack a directory into a .ode file
+    Pack {
+        /// Input directory path
+        input: String,
+        /// Output .ode file (default: derived from input)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Unpack a .ode file into a directory
+    Unpack {
+        /// Input .ode file
+        input: String,
+        /// Output directory (default: derived from input)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
     /// Add a node to a document
     Add {
         /// Node kind: frame, group, text, vector, image
@@ -411,6 +427,8 @@ fn main() {
             text_align.as_deref(),
             line_height.as_deref(),
         ),
+        Command::Pack { input, output } => commands::cmd_pack(&input, output.as_deref()),
+        Command::Unpack { input, output } => commands::cmd_unpack(&input, output.as_deref()),
         Command::Delete { file, stable_id } => mutate::cmd_delete(&file, &stable_id),
         Command::Move { file, stable_id, parent, index } => mutate::cmd_move(&file, &stable_id, &parent, index),
         Command::Add {
