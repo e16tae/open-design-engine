@@ -92,6 +92,8 @@ pub enum ResolvedEffect {
         blur_radius: f32,
         spread: f32,
         shape: kurbo::BezPath,
+        /// Node's world transform — positions the shadow shape in the full-size pixmap.
+        transform: tiny_skia::Transform,
     },
     InnerShadow {
         color: Color,
@@ -100,6 +102,8 @@ pub enum ResolvedEffect {
         blur_radius: f32,
         spread: f32,
         shape: kurbo::BezPath,
+        /// Node's world transform — positions the shadow shape in the full-size pixmap.
+        transform: tiny_skia::Transform,
     },
     LayerBlur {
         radius: f32,

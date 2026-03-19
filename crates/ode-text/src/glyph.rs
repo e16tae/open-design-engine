@@ -79,10 +79,12 @@ pub fn get_glyph_outline(
 
 /// Cached glyph outline extractor.
 ///
-/// Caches glyph outlines by (glyph_id, font_size_bits) to avoid
+/// Caches glyph outlines by (font_ptr, glyph_id, font_size_bits) to avoid
 /// redundant outline extraction for repeated glyphs.
+/// The font pointer (`usize`) distinguishes glyphs from different fonts that
+/// may share the same glyph_id.
 pub struct GlyphCache {
-    cache: HashMap<(u16, u32), Option<kurbo::BezPath>>,
+    cache: HashMap<(usize, u16, u32), Option<kurbo::BezPath>>,
 }
 
 impl GlyphCache {
@@ -98,7 +100,8 @@ impl GlyphCache {
         glyph_id: u16,
         font_size: f32,
     ) -> Result<Option<kurbo::BezPath>, TextError> {
-        let key = (glyph_id, font_size.to_bits());
+        let font_ptr = font_data.as_ptr() as usize;
+        let key = (font_ptr, glyph_id, font_size.to_bits());
         if let Some(cached) = self.cache.get(&key) {
             return Ok(cached.clone());
         }

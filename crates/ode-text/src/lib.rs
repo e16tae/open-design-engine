@@ -94,15 +94,17 @@ pub fn process_text(data: &TextData, font_db: &FontDatabase) -> Result<Processed
             weight,
         })?;
 
-    // Shape text
+    // Shape text (with fallback for characters not in the primary font)
     let font_size = default_style.font_size.value();
     let letter_spacing = default_style.letter_spacing.value();
-    let shaped = shaper::shape_text(
+    let (shaped, font_runs) = shaper::shape_text_with_fallback(
         &data.content,
         &font_data,
+        font_db,
         font_size,
         letter_spacing,
         default_style.transform,
+        weight,
     )?;
 
     // Layout text into lines
@@ -131,9 +133,12 @@ pub fn process_text(data: &TextData, font_db: &FontDatabase) -> Result<Processed
             // Determine which run this glyph belongs to
             let run_index = find_run_index(&runs, positioned.cluster);
 
+            // Find the correct font for this glyph's cluster
+            let glyph_font = font_for_cluster(&font_runs, positioned.cluster);
+
             // Get glyph outline
             if let Some(outline) =
-                glyph::get_glyph_outline(&font_data, positioned.glyph_id, font_size)?
+                glyph::get_glyph_outline(glyph_font, positioned.glyph_id, font_size)?
             {
                 // Translate to final position
                 let mut path = outline;
@@ -254,6 +259,19 @@ pub fn resolve_run_fills(
     }
     // Fall back to TextData's visual fills
     data.visual.fills.clone()
+}
+
+/// Find the font data for a given cluster (byte offset) by looking through font runs.
+fn font_for_cluster<'a>(font_runs: &'a [shaper::FontRun], cluster: usize) -> &'a [u8] {
+    debug_assert!(!font_runs.is_empty(), "font_runs should never be empty");
+    for run in font_runs {
+        if cluster >= run.byte_start && cluster < run.byte_end {
+            return &run.font_data;
+        }
+    }
+    // Fallback to first run's font — cluster may equal byte_end of the last run
+    // for trailing glyphs. This is safe since we always have at least one run.
+    &font_runs.first().expect("font_runs is non-empty").font_data
 }
 
 fn find_run_index(runs: &[(usize, usize, TextStyle)], byte_offset: usize) -> usize {
