@@ -339,6 +339,8 @@ pub fn detect_image_ext(data: &[u8]) -> &'static str {
         }
     } else if data.len() >= 4 && &data[..4] == b"<svg" {
         "svg"
+    } else if data.len() >= 2 && data[..2] == [0x42, 0x4D] {
+        "bmp"
     } else {
         "bin"
     }
