@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::error::ConvertError;
 use crate::path;
 use crate::scene::*;
+use ode_format::asset::AssetStore;
 use ode_format::color::Color;
 use ode_format::document::Document;
 use ode_format::node::{FillRule as OdeFillRule, Node, NodeId, NodeKind, Override};
@@ -18,14 +19,15 @@ type StableIdIndex<'a> = HashMap<&'a str, NodeId>;
 
 impl Scene {
     /// Convert a Document into a Scene.
-    pub fn from_document(doc: &Document, font_db: &FontDatabase) -> Result<Self, ConvertError> {
-        Self::from_document_with_resize(doc, font_db, &crate::layout::ResizeMap::new())
+    pub fn from_document(doc: &Document, font_db: &FontDatabase, assets: &AssetStore) -> Result<Self, ConvertError> {
+        Self::from_document_with_resize(doc, font_db, assets, &crate::layout::ResizeMap::new())
     }
 
     /// Convert a Document into a Scene with optional frame resize overrides.
     pub fn from_document_with_resize(
         doc: &Document,
         font_db: &FontDatabase,
+        assets: &AssetStore,
         resize_map: &crate::layout::ResizeMap,
     ) -> Result<Self, ConvertError> {
         if doc.canvas.is_empty() {
@@ -61,6 +63,7 @@ impl Scene {
                 font_db,
                 &layout_map,
                 &stable_id_index,
+                assets,
             )?;
         }
 
@@ -91,6 +94,7 @@ fn convert_node(
     font_db: &FontDatabase,
     layout_map: &crate::layout::LayoutMap,
     stable_id_index: &StableIdIndex,
+    assets: &AssetStore,
 ) -> Result<(), ConvertError> {
     let node = &doc.nodes[node_id];
     let layout_rect = layout_map.get(&node_id);
@@ -111,6 +115,7 @@ fn convert_node(
             stable_id_index,
             &mut resolution_stack,
             &mut resolution_set,
+            assets,
         );
     }
 
@@ -148,7 +153,7 @@ fn convert_node(
             )?;
         } else if let NodeKind::Image(ref img_data) = node.kind {
             // Image nodes: emit DrawImage first, then visual overlays (strokes/effects)
-            emit_image(img_data, current_transform, commands, layout_rect);
+            emit_image(img_data, current_transform, commands, layout_rect, assets);
             let node_path = get_node_path(doc, node, layout_rect);
             emit_visual(
                 visual,
@@ -187,6 +192,7 @@ fn convert_node(
 
             convert_node(
                 doc, child_id, current_transform, commands, font_db, layout_map, stable_id_index,
+                assets,
             )?;
         }
 
@@ -323,6 +329,7 @@ fn emit_image(
     current_transform: tiny_skia::Transform,
     commands: &mut Vec<RenderCommand>,
     layout_rect: Option<&crate::layout::LayoutRect>,
+    assets: &AssetStore,
 ) {
     let (w, h) = layout_rect
         .map(|r| (r.width, r.height))
@@ -340,10 +347,21 @@ fn emit_image(
             data.clone()
         }
         Some(ode_format::style::ImageSource::Linked { path }) => {
-            // Try to read from disk; skip gracefully if it fails
-            match std::fs::read(path) {
-                Ok(bytes) => bytes,
-                Err(_) => return,
+            // Try asset store first (for "assets/..." paths)
+            let hash = path
+                .strip_prefix("assets/")
+                .and_then(|f| f.split('.').next());
+            if let Some(hash) = hash {
+                match assets.get_loaded(hash) {
+                    Some(data) => data.to_vec(),
+                    None => return, // Not loaded — skip gracefully
+                }
+            } else {
+                // External path — read from disk
+                match std::fs::read(path) {
+                    Ok(bytes) => bytes,
+                    Err(_) => return,
+                }
             }
         }
         None => return,
@@ -427,6 +445,7 @@ fn resolve_instance(
     stable_id_index: &StableIdIndex,
     resolution_stack: &mut Vec<String>,
     resolution_set: &mut HashSet<String>,
+    assets: &AssetStore,
 ) -> Result<(), ConvertError> {
     // Cycle detection (O(1) lookup via HashSet)
     if resolution_set.contains(&inst_data.source_component) {
@@ -536,6 +555,7 @@ fn resolve_instance(
             convert_component_child(
                 doc, child_id, current_transform, commands, font_db, layout_map,
                 stable_id_index, &override_map, resolution_stack, resolution_set,
+                assets,
             )?;
         }
         if mask_open {
@@ -564,6 +584,7 @@ fn convert_component_child(
     override_map: &HashMap<&str, Vec<&Override>>,
     resolution_stack: &mut Vec<String>,
     resolution_set: &mut HashSet<String>,
+    assets: &AssetStore,
 ) -> Result<(), ConvertError> {
     let child = &doc.nodes[child_id];
 
@@ -592,6 +613,7 @@ fn convert_component_child(
             stable_id_index,
             resolution_stack,
             resolution_set,
+            assets,
         );
     }
 
@@ -723,6 +745,7 @@ fn convert_component_child(
             convert_component_child(
                 doc, grandchild_id, current_transform, commands, font_db, layout_map,
                 stable_id_index, override_map, resolution_stack, resolution_set,
+                assets,
             )?;
         }
         if mask_open {
@@ -1118,6 +1141,7 @@ fn resolve_paint(paint: &Paint, tokens: &DesignTokens) -> Option<ResolvedPaint> 
 mod tests {
     use super::*;
     use kurbo::Shape;
+    use ode_format::asset::AssetStore;
     use ode_format::color::Color;
     use ode_format::document::Document;
     use ode_format::node::{Node, NodeKind};
@@ -1153,7 +1177,7 @@ mod tests {
     #[test]
     fn simple_frame_produces_commands() {
         let doc = make_simple_doc();
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         assert!((scene.width - 100.0).abs() < f32::EPSILON);
         assert!((scene.height - 80.0).abs() < f32::EPSILON);
         // Should have: PushLayer, FillPath (red fill), PopLayer
@@ -1167,7 +1191,7 @@ mod tests {
     #[test]
     fn empty_canvas_is_error() {
         let doc = Document::new("Empty");
-        let result = Scene::from_document(&doc, &empty_font_db());
+        let result = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new());
         assert!(result.is_err());
     }
 
@@ -1182,7 +1206,7 @@ mod tests {
         }
         let fid = doc.nodes.insert(frame);
         doc.canvas.push(fid);
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         let fill_count = scene
             .commands
             .iter()
@@ -1204,7 +1228,7 @@ mod tests {
         doc.canvas.push(fid);
 
         // With empty font db, text should be silently skipped
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         // Should have commands for the frame but no FillPath for text glyphs
         let fill_count = scene
             .commands
@@ -1297,7 +1321,7 @@ mod tests {
         let parent_id = doc.nodes.insert(parent);
         doc.canvas.push(parent_id);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         // Scene should have correct dimensions
         assert!((scene.width - 300.0).abs() < f32::EPSILON);
@@ -1334,7 +1358,7 @@ mod tests {
     fn no_layout_backward_compat() {
         // Ensure existing documents without layout still work
         let doc = make_simple_doc();
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         assert!(scene.commands.len() >= 3);
     }
 
@@ -1390,7 +1414,7 @@ mod tests {
             a: 1.0,
         };
         let (doc, _) = make_component_instance_doc(red);
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         // The component frame itself generates 1 FillPath (red)
         // The instance should ALSO generate 1 FillPath (red, from component expansion)
@@ -1446,7 +1470,7 @@ mod tests {
             });
         }
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         // Verify we get 2 FillPaths total
         let fills: Vec<_> = scene
@@ -1539,7 +1563,7 @@ mod tests {
         let canvas_id = doc.nodes.insert(canvas);
         doc.canvas.push(canvas_id);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         let fills: Vec<_> = scene
             .commands
@@ -1577,7 +1601,7 @@ mod tests {
         doc.canvas.push(canvas_id);
 
         // Should not panic, should produce no fills from the instance
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         let fill_count = scene
             .commands
             .iter()
@@ -1660,7 +1684,7 @@ mod tests {
         let canvas_id = doc.nodes.insert(canvas);
         doc.canvas.push(canvas_id);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         let fills: Vec<_> = scene
             .commands
@@ -1739,7 +1763,7 @@ mod tests {
         let canvas_id = doc.nodes.insert(canvas);
         doc.canvas.push(canvas_id);
 
-        let result = Scene::from_document(&doc, &empty_font_db());
+        let result = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new());
         assert!(result.is_err(), "Cyclic instances should return an error");
         let err = result.unwrap_err();
         assert!(
@@ -1805,7 +1829,7 @@ mod tests {
         let canvas_id = doc.nodes.insert(canvas);
         doc.canvas.push(canvas_id);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         // Find clip paths from PushLayer commands — the overridden child should have 120×60 clip
         let clips: Vec<_> = scene
@@ -1858,7 +1882,7 @@ mod tests {
             });
         }
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         let fill_count = scene
             .commands
@@ -1957,7 +1981,7 @@ mod tests {
         let canvas_id = doc.nodes.insert(canvas);
         doc.canvas.push(canvas_id);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         let fill_count = scene
             .commands
@@ -2004,7 +2028,7 @@ mod tests {
         let frame_id = doc.nodes.insert(frame);
         doc.canvas.push(frame_id);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         let draw_image_count = scene
             .commands
@@ -2040,7 +2064,7 @@ mod tests {
         let frame_id = doc.nodes.insert(frame);
         doc.canvas.push(frame_id);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         let draw_image_count = scene
             .commands
             .iter()
@@ -2049,6 +2073,46 @@ mod tests {
         assert_eq!(
             draw_image_count, 0,
             "Expected 0 DrawImage commands, got {}",
+            draw_image_count
+        );
+    }
+
+    #[test]
+    fn emit_image_from_asset_store() {
+        use ode_format::asset::AssetStore;
+        use ode_format::style::ImageSource;
+
+        let mut doc = Document::new("Test");
+        let mut frame = Node::new_frame("Root", 200.0, 150.0);
+        let mut img = Node::new_image("Photo", 100.0, 80.0);
+
+        let mut assets = AssetStore::new();
+        let png_bytes = minimal_png_bytes();
+        let asset_path = assets.add_image(png_bytes.clone(), "png");
+
+        if let NodeKind::Image(ref mut data) = img.kind {
+            data.source = Some(ImageSource::Linked { path: asset_path });
+        }
+
+        let img_id = doc.nodes.insert(img);
+        if let NodeKind::Frame(ref mut data) = frame.kind {
+            data.container.children.push(img_id);
+        }
+        let root = doc.nodes.insert(frame);
+        doc.canvas.push(root);
+
+        let font_db = FontDatabase::new();
+        let scene = Scene::from_document(&doc, &font_db, &assets).unwrap();
+        assert!(!scene.commands.is_empty());
+
+        let draw_image_count = scene
+            .commands
+            .iter()
+            .filter(|c| matches!(c, RenderCommand::DrawImage { .. }))
+            .count();
+        assert_eq!(
+            draw_image_count, 1,
+            "Expected 1 DrawImage from asset store, got {}",
             draw_image_count
         );
     }
@@ -2120,7 +2184,7 @@ mod tests {
         doc.tokens = tokens;
 
         // Render with Light mode active → should produce red
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         let fill_colors: Vec<_> = scene
             .commands
             .iter()
@@ -2137,7 +2201,7 @@ mod tests {
 
         // Switch to Dark mode and render again → should produce blue
         doc.tokens.set_active_mode(col_id, dark_mode);
-        let scene2 = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene2 = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         let fill_colors2: Vec<_> = scene2
             .commands
             .iter()
@@ -2157,7 +2221,7 @@ mod tests {
     fn unbound_values_still_work() {
         // Ensure that documents without any tokens continue to work correctly
         let doc = make_simple_doc();
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         let fill_count = scene
             .commands
             .iter()
@@ -2200,7 +2264,7 @@ mod tests {
         doc.canvas.push(frame_id);
 
         // Should fall back to the cached resolved value (green)
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         let fill_colors: Vec<_> = scene
             .commands
             .iter()
@@ -2238,7 +2302,7 @@ mod tests {
         }
         let fid = doc.nodes.insert(frame);
         doc.canvas.push(fid);
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         // The PushLayer for this frame should have clip: None
         match &scene.commands[0] {
             RenderCommand::PushLayer { clip, .. } => {
@@ -2307,7 +2371,7 @@ mod tests {
         let fid = doc.nodes.insert(frame);
         doc.canvas.push(fid);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         // Should have 2 PushLayers with clips: frame clip + mask clip
         let clip_count = scene
@@ -2420,7 +2484,7 @@ mod tests {
         let fid = doc.nodes.insert(frame);
         doc.canvas.push(fid);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         // Both fills should render
         let fill_count = scene
@@ -2476,7 +2540,7 @@ mod tests {
         doc.canvas.push(fid);
 
         // Should not panic — group mask is silently skipped (no clip applied)
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
         assert!(!scene.commands.is_empty());
     }
 
@@ -2576,7 +2640,7 @@ mod tests {
         let fid = doc.nodes.insert(frame);
         doc.canvas.push(fid);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         // 2 mask clip groups (one per mask)
         let clip_count = scene
@@ -2662,7 +2726,7 @@ mod tests {
         let fid = doc.nodes.insert(frame);
         doc.canvas.push(fid);
 
-        let scene = Scene::from_document(&doc, &empty_font_db()).unwrap();
+        let scene = Scene::from_document(&doc, &empty_font_db(), &AssetStore::new()).unwrap();
 
         // Mask should still produce a clip even though visible=false
         // (is_mask takes priority — the node's visibility doesn't affect its clip role)

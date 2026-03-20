@@ -18,7 +18,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Create a new empty .ode.json document
+    /// Create a new empty .ode document
     New {
         /// Output file path
         file: String,
@@ -32,7 +32,7 @@ enum Command {
         #[arg(long, requires = "width")]
         height: Option<f32>,
     },
-    /// Validate an .ode.json document
+    /// Validate an .ode document
     Validate {
         /// Input file (or "-" for stdin)
         file: String,
@@ -73,7 +73,7 @@ enum Command {
         #[arg(long)]
         full: bool,
     },
-    /// Output JSON Schema for the .ode.json format
+    /// Output JSON Schema for the .ode format
     Schema {
         /// Schema topic: document, node, paint, token, color
         topic: Option<String>,
@@ -104,7 +104,7 @@ enum Command {
     },
     /// Review a design against knowledge-based rules
     Review {
-        /// Input file (.ode.json) or - for stdin
+        /// Input file (.ode) or - for stdin
         file: String,
         /// Override context detection
         #[arg(long)]
@@ -188,6 +188,22 @@ enum Command {
         #[arg(long)]
         index: Option<usize>,
     },
+    /// Pack a directory into a .ode file
+    Pack {
+        /// Input directory path
+        input: String,
+        /// Output .ode file (default: derived from input)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Unpack a .ode file into a directory
+    Unpack {
+        /// Input .ode file
+        input: String,
+        /// Output directory (default: derived from input)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
     /// Add a node to a document
     Add {
         /// Node kind: frame, group, text, vector, image
@@ -238,7 +254,7 @@ enum ImportSource {
         /// Local Figma JSON file (alternative to API)
         #[arg(short, long)]
         input: Option<String>,
-        /// Output .ode.json file path
+        /// Output .ode file path
         #[arg(short, long)]
         output: String,
         /// Include Figma Variables as DesignTokens
@@ -254,12 +270,12 @@ enum ImportSource {
 enum TokenAction {
     /// List all token collections and tokens
     List {
-        /// Input .ode.json file
+        /// Input .ode file
         file: String,
     },
     /// Resolve a token value in the current active mode
     Resolve {
-        /// Input .ode.json file
+        /// Input .ode file
         file: String,
         /// Collection name or ID
         #[arg(long)]
@@ -270,7 +286,7 @@ enum TokenAction {
     },
     /// Set active mode for a collection
     SetMode {
-        /// Input .ode.json file
+        /// Input .ode file
         file: String,
         /// Collection name or ID
         #[arg(long)]
@@ -411,6 +427,8 @@ fn main() {
             text_align.as_deref(),
             line_height.as_deref(),
         ),
+        Command::Pack { input, output } => commands::cmd_pack(&input, output.as_deref()),
+        Command::Unpack { input, output } => commands::cmd_unpack(&input, output.as_deref()),
         Command::Delete { file, stable_id } => mutate::cmd_delete(&file, &stable_id),
         Command::Move { file, stable_id, parent, index } => mutate::cmd_move(&file, &stable_id, &parent, index),
         Command::Add {

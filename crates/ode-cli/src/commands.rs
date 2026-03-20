@@ -2,9 +2,11 @@ use crate::output::*;
 use crate::validate::validate_json;
 use ode_core::{FontDatabase, Renderer, Scene};
 use ode_export::{PdfExporter, PngExporter, SvgExporter};
+use ode_format::asset::AssetStore;
+use ode_format::container::{ContainerError, OdeContainer, OdeSource};
 use ode_format::Document;
 use ode_format::wire::DocumentWire;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 enum ExportFormat {
     Png,
@@ -51,6 +53,88 @@ pub fn load_input(file: &str) -> Result<String, (i32, ErrorResponse)> {
     }
 }
 
+/// Open any supported input as an `OdeContainer`.
+///
+/// Handles packed `.ode`, unpacked directories, legacy `.ode.json`, and stdin.
+#[allow(clippy::result_large_err)]
+fn open_container(file: &str) -> Result<OdeContainer, (i32, ErrorResponse)> {
+    OdeContainer::open(file).map_err(|e| {
+        (
+            EXIT_IO,
+            ErrorResponse::new("IO_ERROR", "io", &format!("failed to open '{file}': {e}")),
+        )
+    })
+}
+
+/// Load document JSON string from any supported input format.
+///
+/// For directories and `.ode` files, extracts `document.json`.
+/// For legacy `.ode.json` files and stdin, reads the file directly.
+#[allow(clippy::result_large_err)]
+fn load_document_json(file: &str) -> Result<String, (i32, ErrorResponse)> {
+    match OdeSource::detect(file) {
+        OdeSource::Stdin | OdeSource::LegacyJson(_) => load_input(file),
+        OdeSource::Unpacked(dir) => {
+            let doc_path = dir.join("document.json");
+            std::fs::read_to_string(&doc_path).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new(
+                        "IO_ERROR",
+                        "io",
+                        &format!("failed to read document.json from '{}': {e}", dir.display()),
+                    ),
+                )
+            })
+        }
+        OdeSource::Packed(path) => {
+            let reader = std::fs::File::open(&path).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new(
+                        "IO_ERROR",
+                        "io",
+                        &format!("failed to open '{}': {e}", path.display()),
+                    ),
+                )
+            })?;
+            let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new(
+                        "IO_ERROR",
+                        "io",
+                        &format!("failed to read ZIP '{}': {e}", path.display()),
+                    ),
+                )
+            })?;
+            let mut entry = archive.by_name("document.json").map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new(
+                        "IO_ERROR",
+                        "io",
+                        &format!("document.json not found in '{}': {e}", path.display()),
+                    ),
+                )
+            })?;
+            let mut buf = String::new();
+            use std::io::Read;
+            entry.read_to_string(&mut buf).map_err(|e| {
+                (
+                    EXIT_IO,
+                    ErrorResponse::new(
+                        "IO_ERROR",
+                        "io",
+                        &format!("failed to read document.json from '{}': {e}", path.display()),
+                    ),
+                )
+            })?;
+            Ok(buf)
+        }
+    }
+}
+
 // ─── ode new ───
 
 pub fn cmd_new(file: &str, name: Option<&str>, width: Option<f32>, height: Option<f32>) -> i32 {
@@ -62,27 +146,41 @@ pub fn cmd_new(file: &str, name: Option<&str>, width: Option<f32>, height: Optio
         doc.canvas.push(id);
     }
 
-    let json = match serde_json::to_string_pretty(&doc) {
-        Ok(j) => j,
-        Err(e) => {
-            print_json(&ErrorResponse::new("INTERNAL", "serialize", &e.to_string()));
-            return EXIT_INTERNAL;
-        }
+    let mut container = OdeContainer::from_document(doc, "ode-cli");
+    let path = Path::new(file);
+
+    let result = if file.ends_with('/') || path.is_dir() {
+        container.save_unpacked(path)
+    } else if file.ends_with(".ode") && !file.ends_with(".ode.json") {
+        container.save_packed(path)
+    } else {
+        // Legacy .ode.json or other — write plain JSON
+        let json = match serde_json::to_string_pretty(&container.document) {
+            Ok(j) => j,
+            Err(e) => {
+                print_json(&ErrorResponse::new("INTERNAL", "serialize", &e.to_string()));
+                return EXIT_INTERNAL;
+            }
+        };
+        std::fs::write(file, json).map_err(ContainerError::Io)
     };
 
-    if let Err(e) = std::fs::write(file, &json) {
-        print_json(&ErrorResponse::new("IO_ERROR", "io", &e.to_string()));
-        return EXIT_IO;
+    match result {
+        Ok(()) => {
+            print_json(&OkResponse::with_path(file));
+            EXIT_OK
+        }
+        Err(e) => {
+            print_json(&ErrorResponse::new("IO_ERROR", "io", &e.to_string()));
+            EXIT_IO
+        }
     }
-
-    print_json(&OkResponse::with_path(file));
-    EXIT_OK
 }
 
 // ─── ode validate ───
 
 pub fn cmd_validate(file: &str) -> i32 {
-    let json = match load_input(file) {
+    let json = match load_document_json(file) {
         Ok(j) => j,
         Err((code, err)) => {
             print_json(&err);
@@ -99,55 +197,60 @@ pub fn cmd_validate(file: &str) -> i32 {
 // ─── ode build ───
 
 pub fn cmd_build(file: &str, output: &str, format: Option<&str>, resize: Option<&str>) -> i32 {
-    let json = match load_input(file) {
-        Ok(j) => j,
+    let mut container = match open_container(file) {
+        Ok(c) => c,
         Err((code, err)) => {
             print_json(&err);
             return code;
         }
     };
 
+    // Validate the document JSON
+    let json = match serde_json::to_string_pretty(&container.document) {
+        Ok(j) => j,
+        Err(e) => {
+            print_json(&ErrorResponse::new("INTERNAL", "serialize", &e.to_string()));
+            return EXIT_INTERNAL;
+        }
+    };
     let validation = validate_json(&json);
     if !validation.valid {
         print_json(&ErrorResponse::validation(validation.errors));
         return EXIT_INPUT;
     }
 
-    let doc: Document = match serde_json::from_str(&json) {
-        Ok(d) => d,
-        Err(e) => {
-            print_json(&ErrorResponse::new("PARSE_FAILED", "parse", &e.to_string()));
-            return EXIT_INPUT;
-        }
-    };
+    // Preload assets before rendering
+    if let Err(e) = container.assets.preload_all() {
+        print_json(&ErrorResponse::new("IO_ERROR", "io", &e.to_string()));
+        return EXIT_IO;
+    }
 
-    render_and_export(&doc, output, format, validation.warnings, resize)
+    render_and_export(&container.document, &container.assets, output, format, validation.warnings, resize)
 }
 
 // ─── ode render ───
 
 pub fn cmd_render(file: &str, output: &str, format: Option<&str>, resize: Option<&str>) -> i32 {
-    let json = match load_input(file) {
-        Ok(j) => j,
+    let mut container = match open_container(file) {
+        Ok(c) => c,
         Err((code, err)) => {
             print_json(&err);
             return code;
         }
     };
 
-    let doc: Document = match serde_json::from_str(&json) {
-        Ok(d) => d,
-        Err(e) => {
-            print_json(&ErrorResponse::new("PARSE_FAILED", "parse", &e.to_string()));
-            return EXIT_INPUT;
-        }
-    };
+    // Preload assets before rendering
+    if let Err(e) = container.assets.preload_all() {
+        print_json(&ErrorResponse::new("IO_ERROR", "io", &e.to_string()));
+        return EXIT_IO;
+    }
 
-    render_and_export(&doc, output, format, vec![], resize)
+    render_and_export(&container.document, &container.assets, output, format, vec![], resize)
 }
 
 fn render_and_export(
     doc: &Document,
+    assets: &AssetStore,
     output: &str,
     format: Option<&str>,
     warnings: Vec<Warning>,
@@ -193,7 +296,7 @@ fn render_and_export(
             resize_map.insert(root_id, (w, h));
         }
 
-        match Scene::from_document_with_resize(doc, &font_db, &resize_map) {
+        match Scene::from_document_with_resize(doc, &font_db, assets, &resize_map) {
             Ok(s) => s,
             Err(e) => {
                 print_json(&ErrorResponse::new(
@@ -205,7 +308,7 @@ fn render_and_export(
             }
         }
     } else {
-        match Scene::from_document(doc, &font_db) {
+        match Scene::from_document(doc, &font_db, assets) {
             Ok(s) => s,
             Err(e) => {
                 print_json(&ErrorResponse::new(
@@ -281,7 +384,7 @@ fn render_and_export(
 // ─── ode inspect ───
 
 pub fn cmd_inspect(file: &str, full: bool) -> i32 {
-    let json = match load_input(file) {
+    let json = match load_document_json(file) {
         Ok(j) => j,
         Err((code, err)) => {
             print_json(&err);
@@ -538,21 +641,33 @@ pub fn cmd_import_figma(
         })
         .collect();
 
-    // Serialize and write output
-    let json = match serde_json::to_string_pretty(&result.document) {
-        Ok(j) => j,
-        Err(e) => {
-            print_json(&ErrorResponse::new(
-                "INTERNAL",
-                "serialize",
-                &format!("Failed to serialize document: {e}"),
-            ));
-            return EXIT_INTERNAL;
-        }
+    // Save output using OdeContainer
+    let mut container = OdeContainer::from_document(result.document, "ode-cli");
+    container.assets = result.asset_store;
+    let path = Path::new(output);
+
+    let save_result = if output.ends_with('/') || path.is_dir() {
+        container.save_unpacked(path)
+    } else if output.ends_with(".ode") && !output.ends_with(".ode.json") {
+        container.save_packed(path)
+    } else {
+        // Legacy .ode.json or other — write plain JSON
+        let json = match serde_json::to_string_pretty(&container.document) {
+            Ok(j) => j,
+            Err(e) => {
+                print_json(&ErrorResponse::new(
+                    "INTERNAL",
+                    "serialize",
+                    &format!("Failed to serialize document: {e}"),
+                ));
+                return EXIT_INTERNAL;
+            }
+        };
+        std::fs::write(output, json).map_err(ContainerError::Io)
     };
 
-    match std::fs::write(output, &json) {
-        Ok(_) => {
+    match save_result {
+        Ok(()) => {
             let mut resp = OkResponse::with_path(output);
             resp.warnings = warnings;
             print_json(&resp);
@@ -597,7 +712,7 @@ pub fn cmd_schema(topic: Option<&str>) -> i32 {
 // ─── ode tokens list ───
 
 pub fn cmd_tokens_list(file: &str) -> i32 {
-    let json = match load_input(file) {
+    let json = match load_document_json(file) {
         Ok(j) => j,
         Err((code, err)) => {
             print_json(&err);
@@ -739,7 +854,7 @@ fn format_token_value(tv: &ode_format::tokens::TokenValue) -> String {
 // ─── ode tokens resolve ───
 
 pub fn cmd_tokens_resolve(file: &str, collection: &str, token: &str) -> i32 {
-    let json = match load_input(file) {
+    let json = match load_document_json(file) {
         Ok(j) => j,
         Err((code, err)) => {
             print_json(&err);
@@ -815,7 +930,7 @@ struct TokenResolveResult {
 // ─── ode tokens set-mode ───
 
 pub fn cmd_tokens_set_mode(file: &str, collection: &str, mode: &str, output: Option<&str>) -> i32 {
-    let json = match load_input(file) {
+    let json = match load_document_json(file) {
         Ok(j) => j,
         Err((code, err)) => {
             print_json(&err);
@@ -1190,7 +1305,7 @@ pub fn cmd_review(file: &str, context: Option<&str>, layer: Option<&str>) -> i32
         }
     };
 
-    let json_str = match load_input(file) {
+    let json_str = match load_document_json(file) {
         Ok(s) => s,
         Err((code, err)) => {
             print_json(&err);
@@ -1275,6 +1390,62 @@ pub fn cmd_review(file: &str, context: Option<&str>, layer: Option<&str>) -> i32
         warnings: vec![],
     };
     print_json(&response);
+    EXIT_OK
+}
+
+// ─── ode pack ───
+
+pub fn cmd_pack(input: &str, output: Option<&str>) -> i32 {
+    let out_path = output
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let p = Path::new(input);
+            let name = p.file_name().unwrap_or_default().to_string_lossy();
+            p.parent().unwrap_or(Path::new(".")).join(format!("{name}.ode"))
+        });
+
+    let mut container = match OdeContainer::open(input) {
+        Ok(c) => c,
+        Err(e) => {
+            print_json(&ErrorResponse::new("OPEN_FAILED", "io", &e.to_string()));
+            return EXIT_IO;
+        }
+    };
+
+    if let Err(e) = container.save_packed(&out_path) {
+        print_json(&ErrorResponse::new("PACK_FAILED", "io", &e.to_string()));
+        return EXIT_PROCESS;
+    }
+
+    print_json(&OkResponse::with_path(out_path.to_str().unwrap_or("")));
+    EXIT_OK
+}
+
+// ─── ode unpack ───
+
+pub fn cmd_unpack(input: &str, output: Option<&str>) -> i32 {
+    let out_path = output
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let p = Path::new(input);
+            let stem = p.file_stem().unwrap_or_default().to_string_lossy();
+            p.parent().unwrap_or(Path::new(".")).join(stem.as_ref())
+        });
+
+    let mut container = match OdeContainer::open(input) {
+        Ok(c) => c,
+        Err(e) => {
+            print_json(&ErrorResponse::new("OPEN_FAILED", "io", &e.to_string()));
+            return EXIT_IO;
+        }
+    };
+
+    if let Err(e) = container.save_unpacked(&out_path) {
+        print_json(&ErrorResponse::new("UNPACK_FAILED", "io", &e.to_string()));
+        return EXIT_PROCESS;
+    }
+
+    print_json(&OkResponse::with_path(out_path.to_str().unwrap_or("")));
     EXIT_OK
 }
 

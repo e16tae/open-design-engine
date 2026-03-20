@@ -1,5 +1,6 @@
 use ode_core::{Renderer, Scene};
 use ode_export::{PdfExporter, PngExporter, SvgExporter};
+use ode_format::asset::AssetStore;
 use ode_format::color::Color;
 use ode_format::document::Document;
 use ode_format::node::{Node, NodeKind, PathSegment, VectorPath};
@@ -30,7 +31,7 @@ fn document_to_png_red_frame() {
     doc.canvas.push(frame_id);
 
     // 2. Convert to scene
-    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new()).unwrap();
+    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new(), &AssetStore::new()).unwrap();
     assert!((scene.width - 64.0).abs() < f32::EPSILON);
     assert!((scene.height - 64.0).abs() < f32::EPSILON);
 
@@ -97,7 +98,7 @@ fn document_with_vector_path() {
     let frame_id = doc.nodes.insert(frame);
     doc.canvas.push(frame_id);
 
-    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new()).unwrap();
+    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new(), &AssetStore::new()).unwrap();
     let pixmap = Renderer::render(&scene).unwrap();
 
     // Bottom-center of the triangle should be blue
@@ -145,7 +146,7 @@ fn document_with_gradient_fill() {
     let frame_id = doc.nodes.insert(frame);
     doc.canvas.push(frame_id);
 
-    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new()).unwrap();
+    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new(), &AssetStore::new()).unwrap();
     let pixmap = Renderer::render(&scene).unwrap();
 
     // Left should be dark, right should be light
@@ -184,7 +185,7 @@ fn document_to_pdf_red_frame() {
     doc.canvas.push(frame_id);
 
     // 2. Convert to scene
-    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new()).unwrap();
+    let scene = Scene::from_document(&doc, &ode_core::FontDatabase::new(), &AssetStore::new()).unwrap();
     assert!((scene.width - 64.0).abs() < f32::EPSILON);
 
     // 3. Export to PDF bytes
@@ -261,7 +262,7 @@ fn mask_e2e_renders_without_panic() {
     doc.canvas.push(fid);
 
     let font_db = ode_core::FontDatabase::new();
-    let scene = Scene::from_document(&doc, &font_db).unwrap();
+    let scene = Scene::from_document(&doc, &font_db, &AssetStore::new()).unwrap();
 
     // PNG render
     let pixmap = Renderer::render(&scene).unwrap();
@@ -333,7 +334,7 @@ fn grid_layout_e2e_renders() {
     doc.canvas.push(fid);
 
     let font_db = ode_core::FontDatabase::new();
-    let scene = Scene::from_document(&doc, &font_db).unwrap();
+    let scene = Scene::from_document(&doc, &font_db, &AssetStore::new()).unwrap();
 
     // PNG should render
     let pixmap = Renderer::render(&scene).unwrap();
