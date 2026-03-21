@@ -1060,6 +1060,96 @@ fn find_mode<'a>(
     None
 }
 
+// ─── ode fonts list ───
+
+pub fn cmd_fonts_list() -> i32 {
+    let db = FontDatabase::new_system();
+    let families = db.families();
+    let json = serde_json::to_string(&families).unwrap();
+    println!("{json}");
+    EXIT_OK
+}
+
+// ─── ode fonts check ───
+
+pub fn cmd_fonts_check(family: &str) -> i32 {
+    let db = FontDatabase::new_system();
+    let weights = db.weights_for_family(family);
+    let available = !weights.is_empty();
+    let resp = serde_json::json!({
+        "family": family,
+        "available": available,
+        "weights": weights,
+    });
+    println!("{}", serde_json::to_string(&resp).unwrap());
+    EXIT_OK
+}
+
+// ─── ode fonts audit ───
+
+pub fn cmd_fonts_audit(file: &str) -> i32 {
+    use ode_format::wire::NodeKindWire;
+    use ode_format::StyleValue;
+
+    let json = match load_document_json(file) {
+        Ok(j) => j,
+        Err((code, err)) => {
+            print_json(&err);
+            return code;
+        }
+    };
+    let wire: DocumentWire = match serde_json::from_str(&json) {
+        Ok(w) => w,
+        Err(e) => {
+            print_json(&ErrorResponse::new("PARSE_FAILED", "parse", &e.to_string()));
+            return EXIT_INPUT;
+        }
+    };
+
+    let mut used_set = std::collections::BTreeSet::new();
+    for node in &wire.nodes {
+        if let NodeKindWire::Text(text_data) = &node.kind {
+            match &text_data.default_style.font_family {
+                StyleValue::Raw(f) => { used_set.insert(f.clone()); }
+                StyleValue::Bound { resolved, .. } => { used_set.insert(resolved.clone()); }
+            }
+            for run in &text_data.runs {
+                if let Some(ff) = &run.style.font_family {
+                    match ff {
+                        StyleValue::Raw(f) => { used_set.insert(f.clone()); }
+                        StyleValue::Bound { resolved, .. } => { used_set.insert(resolved.clone()); }
+                    }
+                }
+            }
+        }
+    }
+
+    let used: Vec<String> = used_set.into_iter().collect();
+    let db = FontDatabase::new_system();
+
+    let mut available = Vec::new();
+    let mut missing = Vec::new();
+    let mut warnings = Vec::new();
+
+    for family in &used {
+        if !db.weights_for_family(family).is_empty() {
+            available.push(family.clone());
+        } else {
+            missing.push(family.clone());
+            warnings.push(format!("{family}: not found in system, will use fallback"));
+        }
+    }
+
+    let resp = serde_json::json!({
+        "used": used,
+        "available": available,
+        "missing": missing,
+        "warnings": warnings,
+    });
+    println!("{}", serde_json::to_string_pretty(&resp).unwrap());
+    EXIT_OK
+}
+
 // ─── ode guide ───
 
 /// Index structure for design-knowledge/index.json

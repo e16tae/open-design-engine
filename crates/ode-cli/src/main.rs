@@ -105,6 +105,11 @@ enum Command {
         #[command(subcommand)]
         action: TokenAction,
     },
+    /// Manage and inspect fonts
+    Fonts {
+        #[command(subcommand)]
+        action: FontAction,
+    },
     /// Query design knowledge guides
     Guide {
         /// Guide layer ID (e.g., "accessibility", "spatial-composition")
@@ -289,6 +294,22 @@ enum ImportSource {
 }
 
 #[derive(Subcommand)]
+enum FontAction {
+    /// List all available system font families
+    List,
+    /// Check if a font family is available and show its weights
+    Check {
+        /// Font family name
+        family: String,
+    },
+    /// Audit font usage in a document
+    Audit {
+        /// Input .ode file
+        file: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum TokenAction {
     /// List all token collections and tokens
     List {
@@ -377,6 +398,11 @@ fn main() {
                 mode,
                 output,
             } => commands::cmd_tokens_set_mode(&file, &collection, &mode, output.as_deref()),
+        },
+        Command::Fonts { action } => match action {
+            FontAction::List => commands::cmd_fonts_list(),
+            FontAction::Check { family } => commands::cmd_fonts_check(&family),
+            FontAction::Audit { file } => commands::cmd_fonts_audit(&file),
         },
         Command::Guide {
             layer_id,
