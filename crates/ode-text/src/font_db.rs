@@ -169,6 +169,36 @@ impl FontDatabase {
         self.fonts.is_empty()
     }
 
+    /// Returns a sorted, deduplicated list of all font family names.
+    pub fn families(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.family_index.keys()
+            .map(|k| {
+                // Return the original-case name from the first entry
+                let idx = self.family_index[k][0];
+                self.fonts[idx].family.clone()
+            })
+            .collect();
+        names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        names
+    }
+
+    /// Returns sorted list of available weights for a font family.
+    /// Returns empty vec if family not found.
+    pub fn weights_for_family(&self, family: &str) -> Vec<u16> {
+        let family_lower = family.to_lowercase();
+        match self.family_index.get(&family_lower) {
+            Some(indices) => {
+                let mut weights: Vec<u16> = indices.iter()
+                    .map(|&i| self.fonts[i].weight)
+                    .collect();
+                weights.sort();
+                weights.dedup();
+                weights
+            }
+            None => vec![],
+        }
+    }
+
     fn scan_system_fonts(&mut self) {
         let mut dirs = vec![
             "/System/Library/Fonts".to_string(),
@@ -322,6 +352,45 @@ mod tests {
                 "Helvetica should not have Hangul glyphs"
             );
         }
+    }
+
+    #[test]
+    fn families_returns_sorted_list() {
+        let db = FontDatabase::new_system();
+        if db.is_empty() {
+            return;
+        }
+        let families = db.families();
+        assert!(!families.is_empty());
+        let mut sorted = families.clone();
+        sorted.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        assert_eq!(families, sorted);
+        let unique: std::collections::HashSet<_> = families.iter().collect();
+        assert_eq!(unique.len(), families.len());
+    }
+
+    #[test]
+    fn weights_for_existing_family() {
+        let db = FontDatabase::new_system();
+        if db.is_empty() {
+            return;
+        }
+        let families = db.families();
+        if families.is_empty() {
+            return;
+        }
+        let weights = db.weights_for_family(&families[0]);
+        assert!(!weights.is_empty());
+        let mut sorted = weights.clone();
+        sorted.sort();
+        assert_eq!(weights, sorted);
+    }
+
+    #[test]
+    fn weights_for_missing_family_is_empty() {
+        let db = FontDatabase::new_system();
+        let weights = db.weights_for_family("NonexistentFont12345");
+        assert!(weights.is_empty());
     }
 
     #[test]
