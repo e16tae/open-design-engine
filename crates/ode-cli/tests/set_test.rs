@@ -182,3 +182,23 @@ fn set_on_unpacked_dir() {
     let mod_strs: Vec<&str> = modified.iter().map(|v| v.as_str().unwrap()).collect();
     assert!(mod_strs.contains(&"opacity"));
 }
+
+#[test]
+fn set_negative_coordinates() {
+    let (_dir, file, id) = setup_doc_with_frame();
+    let out = ode_cmd()
+        .args(["set", &file, &id, "--x", "-100", "--y", "-50"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let resp: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(resp["status"], "ok");
+    let modified = resp["modified"].as_array().unwrap();
+    let mod_strs: Vec<&str> = modified.iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(mod_strs.contains(&"x"));
+    assert!(mod_strs.contains(&"y"));
+}

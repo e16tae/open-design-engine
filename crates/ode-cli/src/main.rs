@@ -114,6 +114,7 @@ enum Command {
         layer: Option<String>,
     },
     /// Set properties on an existing node
+    #[command(allow_negative_numbers = true)]
     Set {
         /// Document file path
         file: String,
