@@ -182,3 +182,122 @@ fn set_on_unpacked_dir() {
     let mod_strs: Vec<&str> = modified.iter().map(|v| v.as_str().unwrap()).collect();
     assert!(mod_strs.contains(&"opacity"));
 }
+
+#[test]
+fn set_negative_coordinates() {
+    let (_dir, file, id) = setup_doc_with_frame();
+    let out = ode_cmd()
+        .args(["set", &file, &id, "--x", "-100", "--y", "-50"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let resp: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(resp["status"], "ok");
+    let modified = resp["modified"].as_array().unwrap();
+    let mod_strs: Vec<&str> = modified.iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(mod_strs.contains(&"x"));
+    assert!(mod_strs.contains(&"y"));
+}
+
+#[test]
+fn set_text_sizing_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.ode.json").to_str().unwrap().to_string();
+    ode_cmd()
+        .args(["new", &file, "--width", "800", "--height", "600"])
+        .output()
+        .unwrap();
+    let out = ode_cmd()
+        .args(["add", "text", &file, "--content", "Hello"])
+        .output()
+        .unwrap();
+    let resp: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let text_id = resp["stable_id"].as_str().unwrap().to_string();
+
+    let out = ode_cmd()
+        .args(["set", &file, &text_id, "--text-sizing", "auto-width"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let resp: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let modified = resp["modified"].as_array().unwrap();
+    let mod_strs: Vec<&str> = modified.iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(mod_strs.contains(&"text-sizing"));
+
+    let doc_json = std::fs::read_to_string(&file).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&doc_json).unwrap();
+    let text_node = doc["nodes"].as_array().unwrap()
+        .iter()
+        .find(|n| n["stable_id"].as_str() == Some(text_id.as_str()))
+        .unwrap();
+    assert_eq!(text_node["sizing_mode"], "auto-width");
+}
+
+#[test]
+fn set_radial_gradient_fill() {
+    let (_dir, file, id) = setup_doc_with_frame();
+    let out = ode_cmd()
+        .args([
+            "set", &file, &id,
+            "--fill", "radial-gradient(#16C1F3, #0A1628)",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+
+    let doc_json = std::fs::read_to_string(&file).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&doc_json).unwrap();
+    let node = doc["nodes"].as_array().unwrap()
+        .iter()
+        .find(|n| n["stable_id"].as_str() == Some(&id))
+        .unwrap();
+    let fill_type = node["visual"]["fills"][0]["paint"]["type"].as_str().unwrap();
+    assert_eq!(fill_type, "radial-gradient");
+}
+
+#[test]
+fn set_solid_replaces_gradient() {
+    let (_dir, file, id) = setup_doc_with_frame();
+    ode_cmd()
+        .args(["set", &file, &id, "--fill", "linear-gradient(90deg, #FF0000, #0000FF)"])
+        .output()
+        .unwrap();
+    let out = ode_cmd()
+        .args(["set", &file, &id, "--fill", "#00FF00"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    let doc_json = std::fs::read_to_string(&file).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&doc_json).unwrap();
+    let node = doc["nodes"].as_array().unwrap()
+        .iter()
+        .find(|n| n["stable_id"].as_str() == Some(&id))
+        .unwrap();
+    let fill_type = node["visual"]["fills"][0]["paint"]["type"].as_str().unwrap();
+    assert_eq!(fill_type, "solid");
+}
+
+#[test]
+fn set_invalid_gradient_fails() {
+    let (_dir, file, id) = setup_doc_with_frame();
+    let out = ode_cmd()
+        .args(["set", &file, &id, "--fill", "linear-gradient(abc, #FF0000)"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+}
+
+#[test]
+fn set_text_sizing_on_non_text_fails() {
+    let (_dir, file, frame_id) = setup_doc_with_frame();
+    let out = ode_cmd()
+        .args(["set", &file, &frame_id, "--text-sizing", "auto-height"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+}

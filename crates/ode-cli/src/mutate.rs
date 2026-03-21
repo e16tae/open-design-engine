@@ -9,7 +9,7 @@ use ode_format::wire::{
 };
 use ode_format::{BlendMode, Color, Fill, LayoutDirection, LayoutPadding, OdeContainer, Paint, SizingMode, Stroke, StyleValue, VisualProps};
 use ode_format::node::{FillRule, Transform, VectorData};
-use ode_format::style::{ImageSource, StrokeCap, StrokeJoin, StrokePosition};
+use ode_format::style::{GradientStop, ImageSource, Point, StrokeCap, StrokeJoin, StrokePosition};
 use ode_format::typography::{LineHeight, TextAlign, TextSizingMode, TextStyle};
 
 // ─── Shared load/save ───
@@ -141,6 +141,123 @@ fn make_solid_fill(color: Color) -> Fill {
     }
 }
 
+/// Parse a fill value from CLI input.
+/// Accepts:
+/// - "#RRGGBB" or "#RGB" → solid fill
+/// - "linear-gradient(angle, color1 pos%, color2 pos%, ...)" → linear gradient
+/// - "radial-gradient(color1 pos%, color2 pos%, ...)" → radial gradient
+fn parse_fill(s: &str) -> Result<Fill, String> {
+    let s = s.trim();
+
+    if s.starts_with('#') {
+        let color = parse_color(s)?;
+        return Ok(make_solid_fill(color));
+    }
+
+    if let Some(inner) = s.strip_prefix("linear-gradient(").and_then(|s| s.strip_suffix(')')) {
+        return parse_linear_gradient(inner);
+    }
+
+    if let Some(inner) = s.strip_prefix("radial-gradient(").and_then(|s| s.strip_suffix(')')) {
+        return parse_radial_gradient(inner);
+    }
+
+    Err(format!("invalid fill value: expected '#RRGGBB', 'linear-gradient(...)', or 'radial-gradient(...)'; got '{s}'"))
+}
+
+fn parse_linear_gradient(inner: &str) -> Result<Fill, String> {
+    let parts: Vec<&str> = split_gradient_args(inner);
+    if parts.is_empty() {
+        return Err("invalid fill value: empty linear-gradient".to_string());
+    }
+
+    // First part should be angle
+    let angle_str = parts[0].trim();
+    let angle_deg: f32 = if let Some(deg_str) = angle_str.strip_suffix("deg") {
+        deg_str.trim().parse::<f32>()
+            .map_err(|_| format!("invalid fill value: expected angle like '90deg', got '{angle_str}'"))?
+    } else {
+        return Err(format!("invalid fill value: expected angle like '90deg', got '{angle_str}'"));
+    };
+
+    let color_parts = &parts[1..];
+    if color_parts.len() < 2 {
+        return Err("invalid fill value: at least 2 color stops required".to_string());
+    }
+
+    let stops = parse_color_stops(color_parts)?;
+
+    // Convert angle to start/end points (CSS convention: 0deg = bottom-to-top)
+    let angle_rad = angle_deg.to_radians();
+    let start = Point {
+        x: 0.5 - 0.5 * angle_rad.sin(),
+        y: 0.5 + 0.5 * angle_rad.cos(),
+    };
+    let end = Point {
+        x: 0.5 + 0.5 * angle_rad.sin(),
+        y: 0.5 - 0.5 * angle_rad.cos(),
+    };
+
+    Ok(Fill {
+        paint: Paint::LinearGradient { stops, start, end },
+        opacity: StyleValue::Raw(1.0),
+        blend_mode: BlendMode::Normal,
+        visible: true,
+    })
+}
+
+fn parse_radial_gradient(inner: &str) -> Result<Fill, String> {
+    let parts: Vec<&str> = split_gradient_args(inner);
+    if parts.len() < 2 {
+        return Err("invalid fill value: at least 2 color stops required".to_string());
+    }
+
+    let stops = parse_color_stops(&parts)?;
+
+    Ok(Fill {
+        paint: Paint::RadialGradient {
+            stops,
+            center: Point { x: 0.5, y: 0.5 },
+            radius: Point { x: 0.5, y: 0.5 },
+        },
+        opacity: StyleValue::Raw(1.0),
+        blend_mode: BlendMode::Normal,
+        visible: true,
+    })
+}
+
+fn split_gradient_args(s: &str) -> Vec<&str> {
+    s.split(',').map(|p| p.trim()).filter(|p| !p.is_empty()).collect()
+}
+
+fn parse_color_stops(parts: &[&str]) -> Result<Vec<GradientStop>, String> {
+    let mut stops = Vec::with_capacity(parts.len());
+
+    for (i, part) in parts.iter().enumerate() {
+        let tokens: Vec<&str> = part.split_whitespace().collect();
+        let color_str = tokens[0];
+        let color = parse_color(color_str)
+            .map_err(|_| format!("invalid fill value: invalid color '{color_str}'"))?;
+
+        let position = if tokens.len() > 1 {
+            let pos_str = tokens[1];
+            pos_str.strip_suffix('%')
+                .and_then(|v| v.parse::<f32>().ok())
+                .map(|v| v / 100.0)
+                .ok_or_else(|| format!("invalid fill value: invalid stop position '{pos_str}'"))?
+        } else {
+            i as f32 / (parts.len() - 1).max(1) as f32
+        };
+
+        stops.push(GradientStop {
+            position,
+            color: StyleValue::Raw(color),
+        });
+    }
+
+    Ok(stops)
+}
+
 fn parse_corner_radius(s: &str) -> [f32; 4] {
     let parts: Vec<f32> = s.split(',').filter_map(|p| p.trim().parse().ok()).collect();
     match parts.len() {
@@ -182,6 +299,7 @@ pub fn cmd_add(
     shape: Option<&str>,
     sides: Option<u32>,
     src: Option<&str>,
+    text_sizing: Option<TextSizingMode>,
 ) -> i32 {
     let (file_path, mut wire) = match load_wire(file) {
         Ok(v) => v,
@@ -193,12 +311,12 @@ pub fn cmd_add(
 
     let stable_id = nanoid::nanoid!();
 
-    // Parse optional fill color
-    let fill_color = if let Some(fill_str) = fill {
-        match parse_color(fill_str) {
-            Ok(c) => Some(c),
+    // Parse optional fill
+    let fill_parsed = if let Some(fill_str) = fill {
+        match parse_fill(fill_str) {
+            Ok(f) => Some(f),
             Err(msg) => {
-                print_json(&ErrorResponse::new("INVALID_COLOR", "parse", &msg));
+                print_json(&ErrorResponse::new("INVALID_VALUE", "parse", &msg));
                 return EXIT_INPUT;
             }
         }
@@ -234,8 +352,8 @@ pub fn cmd_add(
             let cr = corner_radius.map(parse_corner_radius).unwrap_or([0.0; 4]);
             let clip = clips_content.unwrap_or(true);
             let mut visual = VisualProps::default();
-            if let Some(color) = fill_color.clone() {
-                visual.fills.push(make_solid_fill(color));
+            if let Some(ref fill) = fill_parsed {
+                visual.fills.push(fill.clone());
             }
             (
                 NodeKindWire::Frame(FrameDataWire {
@@ -280,8 +398,8 @@ pub fn cmd_add(
                 style.font_family = StyleValue::Raw(ff.to_string());
             }
             let mut visual = VisualProps::default();
-            if let Some(color) = fill_color.clone() {
-                visual.fills.push(make_solid_fill(color));
+            if let Some(ref fill) = fill_parsed {
+                visual.fills.push(fill.clone());
             }
             (
                 NodeKindWire::Text(TextDataWire {
@@ -291,7 +409,7 @@ pub fn cmd_add(
                     default_style: style,
                     width: w,
                     height: h,
-                    sizing_mode: TextSizingMode::Fixed,
+                    sizing_mode: text_sizing.unwrap_or(TextSizingMode::AutoHeight),
                 }),
                 "Text",
             )
@@ -333,8 +451,8 @@ pub fn cmd_add(
                 }
             };
             let mut visual = VisualProps::default();
-            if let Some(color) = fill_color.clone() {
-                visual.fills.push(make_solid_fill(color));
+            if let Some(ref fill) = fill_parsed {
+                visual.fills.push(fill.clone());
             }
             let default_n = shape_default_name(shape_name);
             (
@@ -373,8 +491,8 @@ pub fn cmd_add(
                 path: p.to_string(),
             });
             let mut visual = VisualProps::default();
-            if let Some(color) = fill_color.clone() {
-                visual.fills.push(make_solid_fill(color));
+            if let Some(ref fill) = fill_parsed {
+                visual.fills.push(fill.clone());
             }
             (
                 NodeKindWire::Image(ImageDataWire {
@@ -619,6 +737,7 @@ pub fn cmd_set(
     font_weight: Option<u16>,
     text_align: Option<&str>,
     line_height: Option<&str>,
+    text_sizing: Option<TextSizingMode>,
 ) -> i32 {
     // Check that at least one property is specified
     let has_any = name.is_some()
@@ -644,7 +763,8 @@ pub fn cmd_set(
         || font_family.is_some()
         || font_weight.is_some()
         || text_align.is_some()
-        || line_height.is_some();
+        || line_height.is_some()
+        || text_sizing.is_some();
 
     if !has_any {
         print_json(&ErrorResponse::new(
@@ -773,8 +893,8 @@ pub fn cmd_set(
     // ── Visual properties (frame, vector, text, image, boolean-op — NOT group, NOT instance) ──
 
     if let Some(fill_str) = fill {
-        let color = match parse_color(fill_str) {
-            Ok(c) => c,
+        let new_fill = match parse_fill(fill_str) {
+            Ok(f) => f,
             Err(msg) => {
                 print_json(&ErrorResponse::new("INVALID_VALUE", "validate", &msg));
                 return EXIT_INPUT;
@@ -782,7 +902,6 @@ pub fn cmd_set(
         };
         match DocumentWire::visual_props_mut(&mut node.kind) {
             Some(visual) => {
-                let new_fill = make_solid_fill(color);
                 if visual.fills.is_empty() {
                     visual.fills.push(new_fill);
                 } else {
@@ -1125,6 +1244,23 @@ pub fn cmd_set(
         }
     }
 
+    if let Some(ts) = text_sizing {
+        match &mut node.kind {
+            NodeKindWire::Text(d) => {
+                d.sizing_mode = ts;
+                modified.push("text-sizing".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "text-sizing is only valid for text nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
     // Save
     if let Err((code, err)) = save_wire(&file_path, &wire) {
         print_json(&err);
@@ -1367,4 +1503,78 @@ pub fn cmd_delete(file: &str, stable_id: &str) -> i32 {
         warnings,
     });
     EXIT_OK
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_fill_solid_hex() {
+        let fill = parse_fill("#FF0000").unwrap();
+        assert!(matches!(fill.paint, Paint::Solid { .. }));
+    }
+
+    #[test]
+    fn parse_fill_linear_gradient_basic() {
+        let fill = parse_fill("linear-gradient(90deg, #FF0000, #0000FF)").unwrap();
+        match &fill.paint {
+            Paint::LinearGradient { stops, start, end } => {
+                assert_eq!(stops.len(), 2);
+                assert!((start.x - 0.0).abs() < 0.01);
+                assert!((end.x - 1.0).abs() < 0.01);
+            }
+            _ => panic!("expected LinearGradient"),
+        }
+    }
+
+    #[test]
+    fn parse_fill_linear_gradient_with_stops() {
+        let fill = parse_fill("linear-gradient(180deg, #FF0000 0%, #00FF00 50%, #0000FF 100%)").unwrap();
+        match &fill.paint {
+            Paint::LinearGradient { stops, .. } => {
+                assert_eq!(stops.len(), 3);
+                assert!((stops[0].position - 0.0).abs() < 0.01);
+                assert!((stops[1].position - 0.5).abs() < 0.01);
+                assert!((stops[2].position - 1.0).abs() < 0.01);
+            }
+            _ => panic!("expected LinearGradient"),
+        }
+    }
+
+    #[test]
+    fn parse_fill_radial_gradient() {
+        let fill = parse_fill("radial-gradient(#FF0000, #0000FF)").unwrap();
+        match &fill.paint {
+            Paint::RadialGradient { stops, center, radius } => {
+                assert_eq!(stops.len(), 2);
+                assert!((center.x - 0.5).abs() < 0.01);
+                assert!((center.y - 0.5).abs() < 0.01);
+                assert!((radius.x - 0.5).abs() < 0.01);
+                assert!((radius.y - 0.5).abs() < 0.01);
+            }
+            _ => panic!("expected RadialGradient"),
+        }
+    }
+
+    #[test]
+    fn parse_fill_invalid_gradient() {
+        assert!(parse_fill("linear-gradient(abc, #FF0000)").is_err());
+        assert!(parse_fill("linear-gradient(90deg)").is_err());
+        assert!(parse_fill("linear-gradient(90deg, xyz)").is_err());
+    }
+
+    #[test]
+    fn parse_fill_angle_0deg() {
+        let fill = parse_fill("linear-gradient(0deg, #000000, #FFFFFF)").unwrap();
+        match &fill.paint {
+            Paint::LinearGradient { start, end, .. } => {
+                assert!((start.x - 0.5).abs() < 0.01);
+                assert!((start.y - 1.0).abs() < 0.01);
+                assert!((end.x - 0.5).abs() < 0.01);
+                assert!((end.y - 0.0).abs() < 0.01);
+            }
+            _ => panic!("expected LinearGradient"),
+        }
+    }
 }

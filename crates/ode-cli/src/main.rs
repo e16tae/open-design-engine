@@ -16,6 +16,23 @@ struct Cli {
     command: Command,
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum TextSizingArg {
+    Fixed,
+    AutoHeight,
+    AutoWidth,
+}
+
+impl TextSizingArg {
+    fn to_sizing_mode(self) -> ode_format::typography::TextSizingMode {
+        match self {
+            Self::Fixed => ode_format::typography::TextSizingMode::Fixed,
+            Self::AutoHeight => ode_format::typography::TextSizingMode::AutoHeight,
+            Self::AutoWidth => ode_format::typography::TextSizingMode::AutoWidth,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Create a new empty .ode document
@@ -88,6 +105,11 @@ enum Command {
         #[command(subcommand)]
         action: TokenAction,
     },
+    /// Manage and inspect fonts
+    Fonts {
+        #[command(subcommand)]
+        action: FontAction,
+    },
     /// Query design knowledge guides
     Guide {
         /// Guide layer ID (e.g., "accessibility", "spatial-composition")
@@ -114,6 +136,7 @@ enum Command {
         layer: Option<String>,
     },
     /// Set properties on an existing node
+    #[command(allow_negative_numbers = true)]
     Set {
         /// Document file path
         file: String,
@@ -167,6 +190,8 @@ enum Command {
         text_align: Option<String>,
         #[arg(long)]
         line_height: Option<String>,
+        #[arg(long, value_enum)]
+        text_sizing: Option<TextSizingArg>,
     },
     /// Delete a node and its descendants
     Delete {
@@ -238,6 +263,8 @@ enum Command {
         sides: Option<u32>,
         #[arg(long)]
         src: Option<String>,
+        #[arg(long, value_enum)]
+        text_sizing: Option<TextSizingArg>,
     },
 }
 
@@ -263,6 +290,22 @@ enum ImportSource {
         /// Skip downloading images
         #[arg(long)]
         skip_images: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum FontAction {
+    /// List all available system font families
+    List,
+    /// Check if a font family is available and show its weights
+    Check {
+        /// Font family name
+        family: String,
+    },
+    /// Audit font usage in a document
+    Audit {
+        /// Input .ode file
+        file: String,
     },
 }
 
@@ -356,6 +399,11 @@ fn main() {
                 output,
             } => commands::cmd_tokens_set_mode(&file, &collection, &mode, output.as_deref()),
         },
+        Command::Fonts { action } => match action {
+            FontAction::List => commands::cmd_fonts_list(),
+            FontAction::Check { family } => commands::cmd_fonts_check(&family),
+            FontAction::Audit { file } => commands::cmd_fonts_audit(&file),
+        },
         Command::Guide {
             layer_id,
             context,
@@ -399,6 +447,7 @@ fn main() {
             font_weight,
             text_align,
             line_height,
+            text_sizing,
         } => mutate::cmd_set(
             &file,
             &stable_id,
@@ -426,6 +475,7 @@ fn main() {
             font_weight,
             text_align.as_deref(),
             line_height.as_deref(),
+            text_sizing.map(|ts| ts.to_sizing_mode()),
         ),
         Command::Pack { input, output } => commands::cmd_pack(&input, output.as_deref()),
         Command::Unpack { input, output } => commands::cmd_unpack(&input, output.as_deref()),
@@ -448,6 +498,7 @@ fn main() {
             shape,
             sides,
             src,
+            text_sizing,
         } => mutate::cmd_add(
             &kind,
             &file,
@@ -465,6 +516,7 @@ fn main() {
             shape.as_deref(),
             sides,
             src.as_deref(),
+            text_sizing.map(|ts| ts.to_sizing_mode()),
         ),
     };
 
