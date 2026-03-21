@@ -64,7 +64,7 @@ img.save('/tmp/red-square.png')
   "name": "Hero Image",
   "visible": true,
   "opacity": 1.0,
-  "blend_mode": "Normal",
+  "blend_mode": "normal",
   "transform": {
     "a": 1.0, "b": 0.0,
     "c": 0.0, "d": 1.0,
@@ -108,7 +108,7 @@ img.save('/tmp/red-square.png')
 **4단계: 빌드**
 
 ```bash
-ode build my-design.json --out output.png
+ode build my-design.json --output output.png
 ```
 
 ### 레시피 B: CLI로 이미지 추가
@@ -241,7 +241,7 @@ ode build my-design.ode --out final-output.png
       "name": "Root Frame",
       "visible": true,
       "opacity": 1.0,
-      "blend_mode": "Normal",
+      "blend_mode": "normal",
       "transform": {
         "a": 1.0, "b": 0.0,
         "c": 0.0, "d": 1.0,
@@ -259,7 +259,7 @@ ode build my-design.ode --out final-output.png
               }
             },
             "opacity": { "Raw": 1.0 },
-            "blend_mode": "Normal",
+            "blend_mode": "normal",
             "visible": true
           }
         ]
@@ -273,7 +273,7 @@ ode build my-design.ode --out final-output.png
       "name": "My Photo",
       "visible": true,
       "opacity": 1.0,
-      "blend_mode": "Normal",
+      "blend_mode": "normal",
       "transform": {
         "a": 1.0, "b": 0.0,
         "c": 0.0, "d": 1.0,
