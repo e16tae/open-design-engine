@@ -1,7 +1,7 @@
 # Agent Image Workflow Design Spec
 
 **Date:** 2026-03-21
-**Status:** Draft
+**Status:** Completed
 **Scope:** ODE 이미지 라이프사이클 감사, 갭 수정, 에이전트용 이미지 워크플로우 가이드 확립
 
 ## Context
