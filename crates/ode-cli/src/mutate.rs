@@ -182,6 +182,7 @@ pub fn cmd_add(
     shape: Option<&str>,
     sides: Option<u32>,
     src: Option<&str>,
+    text_sizing: Option<TextSizingMode>,
 ) -> i32 {
     let (file_path, mut wire) = match load_wire(file) {
         Ok(v) => v,
@@ -291,7 +292,7 @@ pub fn cmd_add(
                     default_style: style,
                     width: w,
                     height: h,
-                    sizing_mode: TextSizingMode::Fixed,
+                    sizing_mode: text_sizing.unwrap_or(TextSizingMode::AutoHeight),
                 }),
                 "Text",
             )
@@ -619,6 +620,7 @@ pub fn cmd_set(
     font_weight: Option<u16>,
     text_align: Option<&str>,
     line_height: Option<&str>,
+    text_sizing: Option<TextSizingMode>,
 ) -> i32 {
     // Check that at least one property is specified
     let has_any = name.is_some()
@@ -644,7 +646,8 @@ pub fn cmd_set(
         || font_family.is_some()
         || font_weight.is_some()
         || text_align.is_some()
-        || line_height.is_some();
+        || line_height.is_some()
+        || text_sizing.is_some();
 
     if !has_any {
         print_json(&ErrorResponse::new(
@@ -1119,6 +1122,23 @@ pub fn cmd_set(
                     "INVALID_PROPERTY",
                     "validate",
                     "line-height is only valid for text nodes",
+                ));
+                return EXIT_INPUT;
+            }
+        }
+    }
+
+    if let Some(ts) = text_sizing {
+        match &mut node.kind {
+            NodeKindWire::Text(d) => {
+                d.sizing_mode = ts;
+                modified.push("text-sizing".to_string());
+            }
+            _ => {
+                print_json(&ErrorResponse::new(
+                    "INVALID_PROPERTY",
+                    "validate",
+                    "text-sizing is only valid for text nodes",
                 ));
                 return EXIT_INPUT;
             }

@@ -209,3 +209,55 @@ fn add_text_to_unpacked_dir() {
     let nodes = doc["nodes"].as_array().unwrap();
     assert!(nodes.len() >= 2, "Should have root frame + text node");
 }
+
+#[test]
+fn add_text_default_sizing_mode_is_auto_height() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.ode.json").to_str().unwrap().to_string();
+    ode_cmd()
+        .args(["new", &file, "--width", "800", "--height", "600"])
+        .output()
+        .unwrap();
+
+    let out = ode_cmd()
+        .args(["add", "text", &file, "--content", "Hello world"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    let doc_json = std::fs::read_to_string(&file).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&doc_json).unwrap();
+    let text_node = doc["nodes"].as_array().unwrap()
+        .iter()
+        .find(|n| n["type"] == "text")
+        .expect("text node not found");
+    assert_eq!(text_node["sizing_mode"], "auto-height");
+}
+
+#[test]
+fn add_text_with_explicit_sizing_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.ode.json").to_str().unwrap().to_string();
+    ode_cmd()
+        .args(["new", &file, "--width", "800", "--height", "600"])
+        .output()
+        .unwrap();
+
+    let out = ode_cmd()
+        .args([
+            "add", "text", &file,
+            "--content", "Hello",
+            "--text-sizing", "fixed",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    let doc_json = std::fs::read_to_string(&file).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&doc_json).unwrap();
+    let text_node = doc["nodes"].as_array().unwrap()
+        .iter()
+        .find(|n| n["type"] == "text")
+        .expect("text node not found");
+    assert_eq!(text_node["sizing_mode"], "fixed");
+}
