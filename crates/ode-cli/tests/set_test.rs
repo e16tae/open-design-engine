@@ -238,6 +238,61 @@ fn set_text_sizing_mode() {
 }
 
 #[test]
+fn set_radial_gradient_fill() {
+    let (_dir, file, id) = setup_doc_with_frame();
+    let out = ode_cmd()
+        .args([
+            "set", &file, &id,
+            "--fill", "radial-gradient(#16C1F3, #0A1628)",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+
+    let doc_json = std::fs::read_to_string(&file).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&doc_json).unwrap();
+    let node = doc["nodes"].as_array().unwrap()
+        .iter()
+        .find(|n| n["stable_id"].as_str() == Some(&id))
+        .unwrap();
+    let fill_type = node["visual"]["fills"][0]["paint"]["type"].as_str().unwrap();
+    assert_eq!(fill_type, "radial-gradient");
+}
+
+#[test]
+fn set_solid_replaces_gradient() {
+    let (_dir, file, id) = setup_doc_with_frame();
+    ode_cmd()
+        .args(["set", &file, &id, "--fill", "linear-gradient(90deg, #FF0000, #0000FF)"])
+        .output()
+        .unwrap();
+    let out = ode_cmd()
+        .args(["set", &file, &id, "--fill", "#00FF00"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    let doc_json = std::fs::read_to_string(&file).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&doc_json).unwrap();
+    let node = doc["nodes"].as_array().unwrap()
+        .iter()
+        .find(|n| n["stable_id"].as_str() == Some(&id))
+        .unwrap();
+    let fill_type = node["visual"]["fills"][0]["paint"]["type"].as_str().unwrap();
+    assert_eq!(fill_type, "solid");
+}
+
+#[test]
+fn set_invalid_gradient_fails() {
+    let (_dir, file, id) = setup_doc_with_frame();
+    let out = ode_cmd()
+        .args(["set", &file, &id, "--fill", "linear-gradient(abc, #FF0000)"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+}
+
+#[test]
 fn set_text_sizing_on_non_text_fails() {
     let (_dir, file, frame_id) = setup_doc_with_frame();
     let out = ode_cmd()

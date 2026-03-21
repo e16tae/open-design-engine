@@ -311,12 +311,12 @@ pub fn cmd_add(
 
     let stable_id = nanoid::nanoid!();
 
-    // Parse optional fill color
-    let fill_color = if let Some(fill_str) = fill {
-        match parse_color(fill_str) {
-            Ok(c) => Some(c),
+    // Parse optional fill
+    let fill_parsed = if let Some(fill_str) = fill {
+        match parse_fill(fill_str) {
+            Ok(f) => Some(f),
             Err(msg) => {
-                print_json(&ErrorResponse::new("INVALID_COLOR", "parse", &msg));
+                print_json(&ErrorResponse::new("INVALID_VALUE", "parse", &msg));
                 return EXIT_INPUT;
             }
         }
@@ -352,8 +352,8 @@ pub fn cmd_add(
             let cr = corner_radius.map(parse_corner_radius).unwrap_or([0.0; 4]);
             let clip = clips_content.unwrap_or(true);
             let mut visual = VisualProps::default();
-            if let Some(color) = fill_color.clone() {
-                visual.fills.push(make_solid_fill(color));
+            if let Some(ref fill) = fill_parsed {
+                visual.fills.push(fill.clone());
             }
             (
                 NodeKindWire::Frame(FrameDataWire {
@@ -398,8 +398,8 @@ pub fn cmd_add(
                 style.font_family = StyleValue::Raw(ff.to_string());
             }
             let mut visual = VisualProps::default();
-            if let Some(color) = fill_color.clone() {
-                visual.fills.push(make_solid_fill(color));
+            if let Some(ref fill) = fill_parsed {
+                visual.fills.push(fill.clone());
             }
             (
                 NodeKindWire::Text(TextDataWire {
@@ -451,8 +451,8 @@ pub fn cmd_add(
                 }
             };
             let mut visual = VisualProps::default();
-            if let Some(color) = fill_color.clone() {
-                visual.fills.push(make_solid_fill(color));
+            if let Some(ref fill) = fill_parsed {
+                visual.fills.push(fill.clone());
             }
             let default_n = shape_default_name(shape_name);
             (
@@ -491,8 +491,8 @@ pub fn cmd_add(
                 path: p.to_string(),
             });
             let mut visual = VisualProps::default();
-            if let Some(color) = fill_color.clone() {
-                visual.fills.push(make_solid_fill(color));
+            if let Some(ref fill) = fill_parsed {
+                visual.fills.push(fill.clone());
             }
             (
                 NodeKindWire::Image(ImageDataWire {
@@ -893,8 +893,8 @@ pub fn cmd_set(
     // ── Visual properties (frame, vector, text, image, boolean-op — NOT group, NOT instance) ──
 
     if let Some(fill_str) = fill {
-        let color = match parse_color(fill_str) {
-            Ok(c) => c,
+        let new_fill = match parse_fill(fill_str) {
+            Ok(f) => f,
             Err(msg) => {
                 print_json(&ErrorResponse::new("INVALID_VALUE", "validate", &msg));
                 return EXIT_INPUT;
@@ -902,7 +902,6 @@ pub fn cmd_set(
         };
         match DocumentWire::visual_props_mut(&mut node.kind) {
             Some(visual) => {
-                let new_fill = make_solid_fill(color);
                 if visual.fills.is_empty() {
                     visual.fills.push(new_fill);
                 } else {
