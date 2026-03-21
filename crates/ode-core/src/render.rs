@@ -162,11 +162,11 @@ impl Renderer {
                         if let Some(src_pixmap) =
                             tiny_skia::PixmapRef::from_bytes(rgba.as_raw(), img_w, img_h)
                         {
-                            // Scale from decoded size to display size
+                            // Scale from decoded size to display size, then apply node transform
                             let sx = width / img_w as f32;
                             let sy = height / img_h as f32;
                             let scale = tiny_skia::Transform::from_scale(sx, sy);
-                            let combined = transform.post_concat(scale);
+                            let combined = scale.post_concat(*transform);
                             let img_paint = tiny_skia::PixmapPaint {
                                 opacity: 1.0,
                                 blend_mode: tiny_skia::BlendMode::SourceOver,
